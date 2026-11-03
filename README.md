@@ -5,9 +5,9 @@ Eigener Benachrichtigungsdienst mit Verlauf, Suche und Bildern, benannt nach mei
 | Teil | Stand |
 |---|---|
 | Server (C# / .NET 10) | Senden (JSON, multipart, Grafana-Webhook) mit Bildern und Thumbnails, Publish-Tokens, Verlauf mit Suche, Live-Stream (SSE), Actions, Anmeldung per JWT, Aufbewahrung, Aufräumen, Sicherung in die Nextcloud, Metriken und Loki |
-| Push (APNs), Geräte | folgt |
+| Push (APNs), Geräte | Push an abonnierte Geräte mit Retry, Bild über signierten Link, Actions als Buttons, Badge |
 | Web-Oberfläche | folgt |
-| iOS-App | folgt |
+| iOS-App | Einrichtung mit Login, Inbox, Topics mit Galerie, Suche, Abos, Cache und Live-Updates, Notification Service Extension |
 
 ## Lokal starten
 
@@ -48,11 +48,27 @@ curl -H "Authorization: Bearer ob_…" -F topic=kamera -F message="Bewegung an d
 
 Grafana: Kontaktpunkt vom Typ Webhook mit der URL `https://onkel-bummel.<tailnet>.ts.net/api/v1/webhooks/grafana?topic=alarme`, unter „Authorization Header“ Schema `Bearer` und als Credentials den Token. Alle Felder und Fehler stehen in der [Spezifikation](docs/SPEC.md#senden).
 
+## iOS-App
+
+Voraussetzung: Xcode und [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). Das Xcode-Projekt wird aus `ios/project.yml` erzeugt und nicht eingecheckt.
+
+```bash
+cd ios
+xcodegen
+open OnkelBummel.xcodeproj
+```
+
+Signiert wird automatisch mit dem Team `6GGU8ET2C4`. Die App braucht im Identity-Server den Public Client `onkel-bummel-ios` mit der Redirect-URI `com.b-velop.onkel-bummel:/oauth/callback` (siehe [Spezifikation](docs/SPEC.md#anmeldung)). Im Simulator lässt sich die Server-Adresse beim Start vorgeben: `xcrun simctl launch booted com.b-velop.onkel-bummel -setupServer onkel-bummel.<tailnet>.ts.net`. Einen Push mit Bild probiert man dort mit `xcrun simctl push booted com.b-velop.onkel-bummel push.json` aus.
+
+Push im LXC einschalten: den APNs-Schlüssel nach `/etc/onkel-bummel/secrets/apns.p8` legen (`chown root:1654`, `chmod 640`), in `/etc/onkel-bummel/onkel-bummel.env` `Apns__KeyPath=/run/secrets/apns.p8`, `Apns__KeyId` und `Apns__TeamId=6GGU8ET2C4` eintragen, dann `docker compose up -d`.
+
 ## Tests
 
 ```bash
 cd backend
 dotnet test
+cd ../ios/OnkelBummelKit
+swift test
 ```
 
 ## Betrieb

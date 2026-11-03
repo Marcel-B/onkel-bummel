@@ -98,18 +98,21 @@ Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Co
 | `GET topics`, `PATCH topics/{name}` | Topics mit Anzahl gesamt/ungelesen und letzter Nachricht, zuletzt aktive zuerst; Einstellungen ändern (`displayName`, `icon`, `color` als `#rrggbb`, `muted`, `retentionDays`; nur die mitgeschickten Felder, `null` löscht) |
 | `GET attachments/{id}`, `GET attachments/{id}/thumb` | Original (`?download=true` zum Speichern) und Thumbnail |
 | `GET stream?topics=…` | Server-Sent Events: `message` (die Nachricht wie oben), `read` (`ids` oder `topic` + `upToId`), `deleted` (`id`, `topic`) und `ping` beim Verbinden und alle 25 Sekunden |
-| `POST devices`, `PUT devices/{id}/subscriptions`, `DELETE devices/{id}` | Gerät registrieren, Abos setzen, abmelden |
+| `GET devices`, `POST devices`, `PUT devices/{id}/subscriptions`, `DELETE devices/{id}` | eigene Geräte; registrieren mit `{"id"?, "name", "apnsToken", "environment", "topics"?}` (bekannt am APNs-Token oder an der `id`, die die App sich merkt, so bleibt das Gerät bei neuem Token dasselbe; neue Geräte abonnieren `["*"]`); Abos setzen mit `{"topics": […]}`; abmelden |
+| `GET attachments/{id}/push-thumb?expires=&signature=` (ohne Anmeldung) | Thumbnail über den signierten Link aus einem Push, 15 Minuten gültig |
 | `GET/POST/DELETE publish-tokens` | Publish-Tokens verwalten; `POST {"name", "topics": [...]}` gibt den Schlüssel als `token` zurück, nur dieses eine Mal |
 | `GET config` (ohne Anmeldung) | Issuer, Client-ID der App und Audience für die Einrichtung der App |
 | `GET /health` (ohne Anmeldung) | Zustand für Docker und Blackbox-Probes |
 
 ## Push (APNs)
 
-- Token-Authentifizierung mit dem .p8-Schlüssel (ES256-JWT, alle 50 Minuten erneuert), HTTP/2 direkt über `HttpClient`
-- `alert` mit Titel und Text (gekürzt, damit der Payload unter 4 KB bleibt), `thread-id` = Topic, `badge` = Anzahl ungelesen
-- `interruption-level` aus der Priorität: 1–2 `passive`, 3 `active`, 4–5 `time-sensitive`
-- Bei Bildern `mutable-content: 1` und eine **signierte, kurzlebige Thumbnail-URL** (HMAC, 15 Minuten gültig). Die Notification Service Extension lädt das Bild darüber ohne Anmeldung, und App und Extension kommen sich bei rotierenden Refresh Tokens nicht in die Quere.
-- Labels und Indizes der Actions, damit die Extension passende Buttons anlegen kann
+- Token-Authentifizierung mit dem .p8-Schlüssel (ES256-JWT, alle 50 Minuten erneuert), HTTP/2 direkt über `HttpClient`. Ohne `Apns:KeyPath`, `KeyId` und `TeamId` gehen keine Pushes raus.
+- Jede neue Nachricht kommt in eine Warteschlange; daraus geht ein Push an jedes Gerät, das das Topic (oder `*`) abonniert hat, sofern das Topic nicht stumm ist. Geräte mit `environment` = `sandbox` (Entwicklungs-Builds) gehen an `api.sandbox.push.apple.com`, die übrigen an `api.push.apple.com`.
+- Antwortet APNs mit `429`, `5xx` oder gar nicht, wird es bis zu `Apns:MaxAttempts` (4) Mal versucht, nach `Apns:FirstRetryDelay` (10 s) und dann jeweils sechsmal so lange. Ein abgelaufener Provider-Token wird neu signiert. Geräte, die Apple als abgemeldet meldet (`410`), werden entfernt; `BadDeviceToken` zählt als `invalid_token`, entfernt aber nichts (meist falsche Umgebung).
+- `alert` mit Titel und Text: Titel = Emojis der Tags + Titel der Nachricht, Untertitel = Topic; ohne Titel ist das Topic der Titel. Der Text wird gekürzt, damit der Payload unter 4 KB bleibt.
+- `thread-id` = Topic, `badge` = Anzahl ungelesen (alle Topics), `category` = `message`, `sound` ab Priorität 3
+- `interruption-level` aus der Priorität: 1–2 `passive` (mit `apns-priority` 5), 3 `active`, 4–5 `time-sensitive`
+- Bei Bildern oder Actions `mutable-content: 1`, damit die Notification Service Extension läuft. Unter `ob` stehen `id`, `topic`, `click`, `thumbnail` (signierter Link aufs erste Vorschaubild: HMAC-SHA256 über Anhang und Ablaufzeit, 15 Minuten gültig, Schlüssel in `<DataPath>/url-signing.key`; absolut mit `Server:PublicUrl`) und `actions` (`index`, `label`). Die Extension lädt das Bild darüber ohne Anmeldung, und App und Extension kommen sich bei rotierenden Refresh Tokens nicht in die Quere.
 
 ## Anmeldung
 
@@ -141,16 +144,18 @@ Razor Pages mit htmx und etwas Alpine.js, ohne Node-Build und ohne externe Resso
 
 ## iOS-App
 
-SwiftUI ab iOS 17.
+SwiftUI ab iOS 17, in `ios/` (Xcode-Projekt aus `project.yml` mit XcodeGen, Logik ohne UI im Swift-Paket `OnkelBummelKit`).
 
-- **Einrichtung:** Adresse eingeben oder QR-Code scannen → `GET /api/v1/config` → Anmeldung beim Identity-Server (AppAuth über `ASWebAuthenticationSession`) → Gerät registrieren → APNs-Token hochladen
-- **Tabs:** Inbox, Topics (mit Zählern, je Topic Timeline oder Galerie), Suche, Einstellungen (Abos, Server, Diagnose)
-- Lokaler Cache mit SwiftData, Abgleich per Cursor (`after=`), im Vordergrund live per SSE
-- Bilder mit Thumbnails in der Liste, Detailansicht mit Zoom, Teilen und Sichern
-- Notification Service Extension: hängt das Thumbnail an (nach etwa 5 Sekunden ohne Antwort nur Text) und legt eine Kategorie mit den Actions der Nachricht an
+- **Einrichtung:** Adresse eingeben oder QR-Code scannen (der QR-Code enthält nur die Server-Adresse) → `GET /api/v1/config` und Discovery des Identity-Servers → Anmeldung mit `ASWebAuthenticationSession`, Authorization Code mit PKCE, Scopes aus der Config (mit `offline_access`) → Gerät registrieren → APNs-Token hochladen. Der Refresh Token liegt in der Keychain; der Identity-Server rotiert ihn, deshalb erneuert immer nur eine Stelle in der App.
+- **Tabs:** Inbox, Topics (mit Zählern, je Topic Timeline oder Galerie), Suche (Volltext auf dem Server, Filter Topic, ungelesen, mit Bildern), Einstellungen (Mitteilungen, Abos, Server, Diagnose, Abmelden)
+- Lokaler Cache mit SwiftData. Abgleich per Cursor (`after=` ab der neuesten bekannten Nachricht), dazu jedes Mal die neuesten 100 Nachrichten, aus denen Gelesen-Status und Löschungen übernommen werden. Ältere Seiten lädt die Liste beim Scrollen (`before=`). Im Vordergrund live per SSE, mit Abgleich nach jedem (Wieder-)Verbinden.
+- Bilder mit Thumbnails in der Liste, Detailansicht mit Zoom, Teilen und Sichern des Originals
+- Notification Service Extension: hängt das Thumbnail über den signierten Link an (nach 5 Sekunden ohne Antwort nur Text) und legt eine Kategorie mit „Gelesen“, den Actions der Nachricht und „Öffnen“ an; Nachrichten mit denselben Labels teilen sich eine Kategorie.
 - Aktionen in der Mitteilung: „Gelesen“, „Öffnen“ und die Actions der Nachricht. Die App führt sie im Hintergrund über die API aus.
-- Wischgesten, Badge = Anzahl ungelesen
+- Wischgesten (gelesen, löschen; bei Topics gelesen, stumm), Badge = Anzahl ungelesen
 - Alles außer dem Push-Text braucht Tailscale, am besten auf „On Demand“
+
+Apple-Konto: Team `6GGU8ET2C4`, App `com.b-velop.onkel-bummel` (Push, App Groups, Time Sensitive Notifications), Extension `com.b-velop.onkel-bummel.NotificationService` (App Groups), App Group `group.com.b-velop.onkel-bummel`.
 
 ## Metriken und Logs
 
@@ -207,7 +212,7 @@ Alles in `appsettings.json`, überschreibbar per Umgebungsvariable (`Abschnitt__
 | `Storage` | `DataPath` (Datenbank und Anhänge, im Container `/data`) |
 | `Limits` | `MaxFileBytes`, `MaxFilesPerMessage`, `MaxRequestBytes` |
 | `Oidc` | `Issuer`, `Audience`, `WebClientId`, `WebClientSecret`, `IosClientId`, `RequiredRole` |
-| `Apns` | `KeyPath`, `KeyId`, `TeamId`, `BundleId` |
+| `Apns` | `KeyPath`, `KeyId`, `TeamId`, `BundleId`, `MaxAttempts`, `FirstRetryDelay` |
 | `Monitoring` | `MetricsPort`, `InventoryInterval`, `Loki:Url`, `Loki:Host` |
 | `Backup` | `NextcloudWebDavUrl`, `NextcloudUserName`, `NextcloudAppPassword`, `Passphrase`, `At` |
 | `Jobs` | `Enabled`, `MaintenanceAt` (Uhrzeit für `retention` und `cleanup`, Standard 04:15) |
