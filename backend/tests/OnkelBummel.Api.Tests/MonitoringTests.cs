@@ -189,6 +189,12 @@ public class LokiShipperTests
     [InlineData("System.Net.Http.HttpClient.Loki", "http-client")]
     [InlineData("Microsoft.AspNetCore.Hosting.Diagnostics", "http")]
     [InlineData("OnkelBummel.Api.Endpoints.MessageEndpoints", "api")]
+    [InlineData("OnkelBummel.Api.Publishing.MessagePublisher", "api")]
+    [InlineData("Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerHandler", "auth")]
+    [InlineData("Microsoft.AspNetCore.Authorization.DefaultAuthorizationService", "auth")]
+    [InlineData("System.Net.Http.HttpClient.Actions.ClientHandler", "actions")]
+    [InlineData("System.Net.Http.HttpClient.Backup.LogicalHandler", "jobs")]
+    [InlineData("System.Net.Http.HttpClient.Attachments.ClientHandler", "http-client")]
     public void Sorts_categories_into_a_few_sources(string category, string source) =>
         Assert.Equal(source, LokiLoggerProvider.Source(category));
 

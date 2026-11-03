@@ -67,3 +67,41 @@ pct exec <CTID> -- journalctl -u onkel-bummel-update -n 80    # Log der letzten 
 pct exec <CTID> -- systemctl list-timers onkel-bummel-update  # nächster Lauf
 pct exec <CTID> -- systemctl disable --now onkel-bummel-update.timer   # automatische Updates aus
 ```
+
+## Publish-Tokens
+
+Sender brauchen einen Token. Bis zur Web-Oberfläche legt man ihn im LXC auf der Kommandozeile an; die Topics kommagetrennt, `'*'` für alle:
+
+```bash
+pct exec <CTID> -- docker compose -f /opt/onkel-bummel/deploy/docker-compose.yml exec onkel-bummel \
+  dotnet OnkelBummel.Api.dll --create-token grafana alarme
+```
+
+`--list-tokens` zeigt alle Tokens mit ihrer ID und wann sie zuletzt benutzt wurden, `--delete-token <id>` löscht einen.
+
+## Sicherung in die Nextcloud
+
+Jede Nacht um `Backup__At` (Standard 03:30, Zeit des Containers) kopiert der Server die Datenbank über SQLites Online-Backup, packt sie mit allen Anhängen als ZIP und lädt sie per WebDAV in einen Nextcloud-Ordner, wie `identity-backup` beim Identity-Server. Es entstehen `onkel-bummel-mon.zip` … `onkel-bummel-sun.zip` und `onkel-bummel-2026-10.zip` (der letzte Stand jedes Monats); in der Nextcloud wird nichts gelöscht. Die Metrik `onkelbummel_backup_last_success_timestamp_seconds` speist den Alarm „Sicherung zu alt“.
+
+Einrichten: in der Nextcloud unter Einstellungen > Sicherheit > Geräte & Sitzungen ein App-Passwort anlegen und in `/etc/onkel-bummel/onkel-bummel.env` eintragen, danach `docker compose up -d`:
+
+```bash
+Backup__NextcloudWebDavUrl=https://cloud.example.de/remote.php/dav/files/<benutzer>/Backups/onkel-bummel
+Backup__NextcloudUserName=<benutzer>
+Backup__NextcloudAppPassword=<app-passwort>
+Backup__Passphrase=<optional, verschlüsselt die Archive mit AES-256>
+```
+
+Der Ordner `onkel-bummel` wird angelegt, der darüber (`Backups`) muss existieren. Ohne diese Werte bleibt die Sicherung aus. Die Passphrase außerhalb des LXC aufheben, etwa im Passwortmanager.
+
+Zurückspielen:
+
+```bash
+# verschlüsselte Archive zuerst entschlüsseln
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in onkel-bummel-mon.zip.enc -out onkel-bummel-mon.zip
+# im LXC: Server anhalten, Daten ersetzen, wieder starten
+docker compose -f /opt/onkel-bummel/deploy/docker-compose.yml stop
+cd /var/lib/onkel-bummel && rm -rf attachments onkel-bummel.db onkel-bummel.db-wal onkel-bummel.db-shm
+unzip /root/onkel-bummel-mon.zip -d /var/lib/onkel-bummel && chown -R 1654:1654 /var/lib/onkel-bummel
+docker compose -f /opt/onkel-bummel/deploy/docker-compose.yml start
+```

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace OnkelBummel.Api.Data;
 
@@ -19,6 +20,12 @@ public sealed class OnkelBummelDbContext(DbContextOptions<OnkelBummelDbContext> 
     public DbSet<Subscription> Subscriptions => Set<Subscription>();
 
     public DbSet<PublishToken> PublishTokens => Set<PublishToken>();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder configuration)
+    {
+        // SQLite keeps no time zone. All times are UTC and come back marked as such, so the API writes them with "Z".
+        configuration.Properties<DateTime>().HaveConversion<UtcConverter>();
+    }
 
     protected override void OnModelCreating(ModelBuilder model)
     {
@@ -67,4 +74,8 @@ public sealed class OnkelBummelDbContext(DbContextOptions<OnkelBummelDbContext> 
 
         model.Entity<PublishToken>(token => token.HasIndex(t => t.Hash).IsUnique());
     }
+
+    private sealed class UtcConverter() : ValueConverter<DateTime, DateTime>(
+        value => value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : value,
+        value => DateTime.SpecifyKind(value, DateTimeKind.Utc));
 }

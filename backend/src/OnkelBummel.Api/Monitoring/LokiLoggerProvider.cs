@@ -24,7 +24,12 @@ public sealed class LokiLoggerProvider(LokiLogQueue queue, TimeProvider time) : 
         _ when category.StartsWith("OnkelBummel.Api.Actions", StringComparison.Ordinal) => "actions",
         _ when category.StartsWith("OnkelBummel.Api.Auth", StringComparison.Ordinal) => "auth",
         _ when category.StartsWith("OnkelBummel.Api.Jobs", StringComparison.Ordinal) => "jobs",
+        _ when category.StartsWith("Microsoft.AspNetCore.Authentication", StringComparison.Ordinal) => "auth",
+        _ when category.StartsWith("Microsoft.AspNetCore.Authorization", StringComparison.Ordinal) => "auth",
         _ when category.StartsWith("Microsoft.EntityFrameworkCore", StringComparison.Ordinal) => "db",
+        // Named clients log as System.Net.Http.HttpClient.<name>; the calls of actions and backups belong to those.
+        _ when category.StartsWith("System.Net.Http.HttpClient.Actions.", StringComparison.Ordinal) => "actions",
+        _ when category.StartsWith("System.Net.Http.HttpClient.Backup.", StringComparison.Ordinal) => "jobs",
         _ when category.StartsWith("System.Net.Http", StringComparison.Ordinal) => "http-client",
         _ when category.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal) => "http",
         _ => "api",
