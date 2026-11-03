@@ -73,6 +73,8 @@ Signiert wird automatisch mit dem Team `6GGU8ET2C4`. Die App braucht im Identity
 
 Push im LXC einschalten: den APNs-Schlüssel nach `/etc/onkel-bummel/secrets/apns.p8` legen (`chown root:1654`, `chmod 640`), in `/etc/onkel-bummel/onkel-bummel.env` `Apns__KeyPath=/run/secrets/apns.p8`, `Apns__KeyId` und `Apns__TeamId=6GGU8ET2C4` eintragen, dann `docker compose up -d`.
 
+TestFlight: Jeder Push auf `main`, der `ios/` ändert, baut die App auf GitHub Actions ([testflight.yml](.github/workflows/testflight.yml)), testet OnkelBummelKit und lädt den Build für interne Tester hoch; von Hand mit `gh workflow run testflight.yml`. Die Build-Nummer ist die Uhrzeit (UTC, `JJJJMMTTHHMM`), die Version kommt aus `MARKETING_VERSION` in `ios/project.yml`. Beim Export bekommt die App die Distribution-Signatur und `aps-environment` = production und meldet sich damit für Pushes über Apples Produktions-Server an. Dafür braucht das Repo einen App-Store-Connect-API-Schlüssel (Teamschlüssel, Rolle App Manager) als Secrets, einzutragen mit `ios/scripts/testflight-secrets.sh`. Ohne Secrets überspringt der Workflow den Upload mit einer Warnung.
+
 ## Tests
 
 ```bash
