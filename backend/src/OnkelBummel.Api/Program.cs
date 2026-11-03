@@ -12,6 +12,7 @@ using OnkelBummel.Api.Messages;
 using OnkelBummel.Api.Monitoring;
 using OnkelBummel.Api.Options;
 using OnkelBummel.Api.Publishing;
+using OnkelBummel.Api.Push;
 using Prometheus;
 
 // Docker's health check: the aspnet image has neither curl nor wget, so the app asks itself.
@@ -59,6 +60,11 @@ builder.Services.AddSingleton<MessageEvents>();
 builder.Services.AddSingleton<AttachmentStore>();
 builder.Services.AddScoped<MessagePublisher>();
 builder.Services.AddScoped<ActionRunner>();
+builder.Services.AddSingleton<PushQueue>();
+builder.Services.AddSingleton<ApnsTokenProvider>();
+builder.Services.AddSingleton<ApnsClient>();
+builder.Services.AddSingleton<ThumbnailUrlSigner>();
+builder.Services.AddHostedService<PushWorker>();
 builder.Services.AddScoped<RetentionJob>();
 builder.Services.AddScoped<CleanupJob>();
 builder.Services.AddScoped<BackupJob>();
@@ -75,6 +81,19 @@ builder.Services.AddHttpClient(ActionRunner.HttpClientName, http =>
     http.Timeout = TimeSpan.FromSeconds(15);
     http.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
 });
+builder.Services.AddHttpClient(ApnsClient.HttpClientName, http =>
+    {
+        http.Timeout = TimeSpan.FromSeconds(15);
+        http.DefaultRequestVersion = System.Net.HttpVersion.Version20;
+        http.DefaultVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+    })
+    // One connection to Apple stays open and carries all pushes, as Apple asks.
+    .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+    {
+        PooledConnectionIdleTimeout = TimeSpan.FromMinutes(30),
+        KeepAlivePingDelay = TimeSpan.FromMinutes(5),
+        KeepAlivePingPolicy = HttpKeepAlivePingPolicy.WithActiveRequests,
+    });
 builder.Services.AddHttpClient(BackupJob.HttpClientName, http =>
 {
     // The archive holds all attachments, which may take a while to upload.
@@ -136,7 +155,8 @@ app.MapGroup("/api/v1")
     .MapTopicEndpoints()
     .MapAttachmentEndpoints()
     .MapStreamEndpoints()
-    .MapPublishTokenEndpoints();
+    .MapPublishTokenEndpoints()
+    .MapDeviceEndpoints();
 
 if (app.Configuration.GetValue("Database:InitializeOnStartup", true))
     await app.Services.InitializeDatabaseAsync();

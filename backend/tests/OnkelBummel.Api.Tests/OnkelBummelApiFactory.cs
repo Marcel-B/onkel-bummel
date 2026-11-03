@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -9,6 +10,7 @@ using OnkelBummel.Api.Auth;
 using OnkelBummel.Api.Data;
 using OnkelBummel.Api.Jobs;
 using OnkelBummel.Api.Publishing;
+using OnkelBummel.Api.Push;
 
 namespace OnkelBummel.Api.Tests;
 
@@ -23,6 +25,14 @@ public sealed class OnkelBummelApiFactory : WebApplicationFactory<Program>, IAsy
     /// <summary>Stands in for everything the server calls: action targets, image URLs and Nextcloud.</summary>
     public StubHttp Remote { get; } = new();
 
+    /// <summary>Stands in for Apple's push service; answers 200 unless told otherwise.</summary>
+    public StubHttp Apns { get; } = new();
+
+    /// <summary>The APNs signing key the server reads as its .p8 file.</summary>
+    public ECDsa ApnsKey { get; } = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+
+    public const string PublicUrl = "https://onkel-bummel.example.ts.net";
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
@@ -31,11 +41,20 @@ public sealed class OnkelBummelApiFactory : WebApplicationFactory<Program>, IAsy
         builder.UseSetting("Monitoring:InventoryEnabled", "false");
         builder.UseSetting("Jobs:Enabled", "false");
         builder.UseSetting("Oidc:Issuer", "https://identity.example.ts.net");
+        builder.UseSetting("Server:PublicUrl", PublicUrl);
+        Directory.CreateDirectory(DataPath);
+        var apnsKeyPath = Path.Combine(DataPath, "apns.p8");
+        File.WriteAllText(apnsKeyPath, ApnsKey.ExportPkcs8PrivateKeyPem());
+        builder.UseSetting("Apns:KeyPath", apnsKeyPath);
+        builder.UseSetting("Apns:KeyId", "TESTKEY123");
+        builder.UseSetting("Apns:TeamId", "6GGU8ET2C4");
+        builder.UseSetting("Apns:FirstRetryDelay", "00:00:00.05");
         builder.ConfigureTestServices(services =>
         {
             services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, o => o.BackchannelHttpHandler = Identity.Backchannel);
             foreach (var name in new[] { ActionRunner.HttpClientName, AttachmentStore.HttpClientName, BackupJob.HttpClientName })
                 services.AddHttpClient(name).ConfigurePrimaryHttpMessageHandler(() => Remote);
+            services.AddHttpClient(ApnsClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Apns);
         });
     }
 
@@ -43,10 +62,11 @@ public sealed class OnkelBummelApiFactory : WebApplicationFactory<Program>, IAsy
         Services.CreateScope().ServiceProvider.GetRequiredService<OnkelBummelDbContext>();
 
     /// <summary>A client signed in as the user, with the role "onkel-bummel" unless said otherwise.</summary>
-    public HttpClient CreateUserClient(object? roles = null)
+    public HttpClient CreateUserClient(object? roles = null, string subject = "user-1")
     {
         var client = CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", Identity.CreateToken(roles: roles ?? "onkel-bummel"));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", Identity.CreateToken(roles: roles ?? "onkel-bummel", subject: subject));
         return client;
     }
 

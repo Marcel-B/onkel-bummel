@@ -17,7 +17,7 @@ Nicht im Umfang: mehrere Nutzer, Android, MQTT, ntfy-Kompatibilität, E-Mail/SMS
 | Repo, Hostname, Docker-Service | `onkel-bummel` |
 | Solution / Projekte | `OnkelBummel`, `OnkelBummel.Api`, `OnkelBummel.Api.Tests` |
 | Metrik-Präfix, Loki-Label `app` | `onkelbummel` |
-| iOS-Bundle-ID, URL-Schema | `de.bvelop.onkelbummel` |
+| iOS-Bundle-ID, URL-Schema | `com.b-velop.onkel-bummel` (Notification Service Extension `com.b-velop.onkel-bummel.NotificationService`, App Group `group.com.b-velop.onkel-bummel`, Team `6GGU8ET2C4`) |
 | Publish-Tokens | Präfix `ob_` |
 
 ## Konzepte
@@ -120,7 +120,7 @@ Im Admin des Identity-Servers einmal anlegen (keine Codeänderung dort nötig):
 | Scope `onkel-bummel-api` | Ressource/Audience `onkel-bummel-api` |
 | Rolle `onkel-bummel` | dem eigenen Benutzer zuweisen |
 | Client `onkel-bummel-web` | vertraulich, Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `https://onkel-bummel.<tailnet>.ts.net/auth/callback` (lokal zusätzlich `http://localhost:8080/auth/callback`), Post-Logout `https://onkel-bummel.<tailnet>.ts.net/`, Scope `onkel-bummel-api` |
-| Client `onkel-bummel-ios` | Public Client (PKCE), Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `de.bvelop.onkelbummel:/oauth/callback`, Scope `onkel-bummel-api` |
+| Client `onkel-bummel-ios` | Public Client (PKCE), Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `com.b-velop.onkel-bummel:/oauth/callback`, Scope `onkel-bummel-api` |
 
 Im Server gibt es drei Anmeldeverfahren:
 

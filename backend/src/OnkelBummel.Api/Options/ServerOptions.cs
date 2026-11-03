@@ -68,7 +68,21 @@ public sealed class ApnsOptions
 
     public string? TeamId { get; set; }
 
-    public string BundleId { get; set; } = "de.bvelop.onkelbummel";
+    public string BundleId { get; set; } = "com.b-velop.onkel-bummel";
+
+    /// <summary>APNs for development builds (device environment "sandbox").</summary>
+    public Uri SandboxUrl { get; set; } = new("https://api.sandbox.push.apple.com");
+
+    /// <summary>APNs for TestFlight and App Store builds (device environment "production").</summary>
+    public Uri ProductionUrl { get; set; } = new("https://api.push.apple.com");
+
+    /// <summary>Pushes APNs could not take are tried again after this, then six times as long each time.</summary>
+    public TimeSpan FirstRetryDelay { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Tries per push and device, the first one included.</summary>
+    public int MaxAttempts { get; set; } = 4;
+
+    public bool IsConfigured => !string.IsNullOrEmpty(KeyPath) && !string.IsNullOrEmpty(KeyId) && !string.IsNullOrEmpty(TeamId);
 }
 
 public sealed class BackupOptions
