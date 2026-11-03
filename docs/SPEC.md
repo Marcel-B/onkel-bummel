@@ -91,7 +91,7 @@ Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Co
 
 | Aufruf | Zweck |
 |---|---|
-| `GET messages?topics=a,b&q=&unread=1&has_image=1&before=<id>&after=<id>&limit=50` | Verlauf als `{"messages": […], "hasMore": …}`, neueste zuerst; mit `after` (ohne `before`) älteste zuerst, damit man mit der letzten ID weiterblättern kann. `q` ist eine Volltextsuche über Titel, Text und Tags (jedes Wort als Präfix). `limit` 1–200 |
+| `GET messages?topics=a,b&q=&unread=1&has_image=1&min_priority=&tags=a,b&since=&until=&before=<id>&after=<id>&limit=50` | Verlauf als `{"messages": […], "hasMore": …}`, neueste zuerst; mit `after` (ohne `before`) älteste zuerst, damit man mit der letzten ID weiterblättern kann. `q` ist eine Volltextsuche über Titel, Text und Tags (jedes Wort als Präfix). `min_priority` 1–5, `tags` müssen alle an der Nachricht hängen, `since` (einschließlich) und `until` (ausschließlich) sind Zeitpunkte in ISO 8601. `limit` 1–200 |
 | `GET messages/{id}`, `DELETE messages/{id}` | eine Nachricht; Löschen entfernt auch die Dateien |
 | `POST messages/{id}/read`, `POST messages/read` | gelesen setzen, einzeln oder gesammelt: `{"topic": …, "upToId": …}`, beides optional; ohne `upToId` alles, was es gerade gibt |
 | `POST messages/{id}/actions/{index}` | Action ausführen; Antwort `{"index", "status", "ok", "runAt", "markedRead"}`, `status` 0 heißt: Ziel nicht erreicht |
@@ -103,6 +103,7 @@ Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Co
 | `GET/POST/DELETE publish-tokens` | Publish-Tokens verwalten; `POST {"name", "topics": [...]}` gibt den Schlüssel als `token` zurück, nur dieses eine Mal |
 | `GET config` (ohne Anmeldung) | Issuer, Client-ID der App und Audience für die Einrichtung der App |
 | `GET /health` (ohne Anmeldung) | Zustand für Docker und Blackbox-Probes |
+| `GET /auth/login?returnUrl=`, `GET /auth/me`, `POST /auth/logout` | Anmeldung der Web-Oberfläche (siehe [Anmeldung](#anmeldung)): zum Identity-Server und zurück auf `returnUrl` (nur Pfade dieses Servers); der angemeldete Benutzer als `{"sub", "name"}` (`401` ohne Anmeldung, `403` ohne Rolle); abmelden hier und beim Identity-Server |
 
 ## Push (APNs)
 
@@ -122,25 +123,26 @@ Im Admin des Identity-Servers einmal anlegen (keine Codeänderung dort nötig):
 |---|---|
 | Scope `onkel-bummel-api` | Ressource/Audience `onkel-bummel-api` |
 | Rolle `onkel-bummel` | dem eigenen Benutzer zuweisen |
-| Client `onkel-bummel-web` | vertraulich, Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `https://onkel-bummel.<tailnet>.ts.net/auth/callback` (lokal zusätzlich `http://localhost:8080/auth/callback`), Post-Logout `https://onkel-bummel.<tailnet>.ts.net/`, Scope `onkel-bummel-api` |
+| Client `onkel-bummel-web` | vertraulich, Zustimmung `implicit`, `authorization_code`, Redirect `https://onkel-bummel.<tailnet>.ts.net/auth/callback`, Post-Logout `https://onkel-bummel.<tailnet>.ts.net/auth/signed-out` (lokal zusätzlich dasselbe mit `http://localhost:8080`), Scopes `profile` und `roles` |
 | Client `onkel-bummel-ios` | Public Client (PKCE), Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `com.b-velop.onkel-bummel:/oauth/callback`, Scope `onkel-bummel-api` |
 
 Im Server gibt es drei Anmeldeverfahren:
 
-- **Web-Oberfläche:** Cookie + OpenID Connect (Code mit PKCE, `offline_access`). Die Tokens bleiben im Server, der Browser hat nur ein Session-Cookie. Hinter `tailscale serve` mit `UseForwardedHeaders`.
+- **Web-Oberfläche:** Cookie + OpenID Connect (Code mit PKCE, Antwort per Query, Scopes `openid profile roles`). Die Rolle steht im ID-Token. Der Browser bekommt nur das Session-Cookie `onkel-bummel` (HttpOnly, SameSite=Lax, 30 Tage, verlängert sich bei Benutzung), kein Token. Ein Refresh Token ist nicht nötig, weil der Server mit dem Token keine andere API aufruft. Änderungen über die API mit dem Cookie brauchen den Header `X-Requested-With`, sonst `403`; eine fremde Seite kann ihn ohne CORS-Preflight nicht setzen. Hinter `tailscale serve` mit `UseForwardedHeaders`.
 - **iOS-App:** JWT-Bearer. Geprüft werden Issuer, Audience `onkel-bummel-api`, Ablauf, Signatur (JWKS aus der Discovery) und die Rolle `onkel-bummel` oder `admin` (`role` kann String oder Array sein). Der Benutzer wird über `sub` erkannt.
 - **Sender:** Publish-Tokens `ob_…`, eigener Authentication-Handler
 
 ## Web-Oberfläche
 
-Razor Pages mit htmx und etwas Alpine.js, ohne Node-Build und ohne externe Ressourcen, hell und dunkel, auch auf dem Handy benutzbar.
+Vue 3 mit TypeScript, Vite, Tailwind CSS, Pinia und Axios in `backend/web/`. Der Build landet im `wwwroot` des Servers, der die App ausliefert: Jeder Pfad außerhalb von `/api` bekommt `index.html` (mit Content-Security-Policy, ohne externe Ressourcen), Dateien unter `/assets` tragen einen Hash und werden ein Jahr gecacht. Hell und dunkel nach Systemeinstellung, auch auf dem Handy benutzbar. Ohne Anmeldung geht es gleich zum Identity-Server.
 
-- Topic-Liste mit Ungelesen-Zählern, daneben die Timeline (Infinite Scroll, live per SSE)
-- Suche und Filter: Topic, Priorität, Tags, Zeitraum, nur ungelesen, nur mit Bildern
-- Galerie pro Topic mit Lightbox und Download des Originals
+- Topic-Liste mit Ungelesen-Zählern, daneben die Timeline (Infinite Scroll, live per SSE, nach jedem Wiederverbinden neu geladen); Ungelesen-Zahl im Tab-Titel
+- Suche und Filter: Topic, Mindestpriorität, Tags, Zeitraum, nur ungelesen, nur mit Bildern; der Filter steht in der Adresse (`/topics/garage?q=tor&prio=4&tags=a,b&von=2026-11-01&bis=2026-11-03&ungelesen=1&bilder=1`)
+- Galerie pro Topic und über alle Topics, mit Lightbox (Pfeiltasten) und Download des Originals
 - Action-Buttons mit dem letzten Ergebnis
 - Gelesen setzen (einzeln, pro Topic, alle), Löschen
-- Verwaltung: Topics, Publish-Tokens, Geräte und ihre Abos, QR-Code mit der Server-Adresse für die App
+- Text als Markdown light (fett, kursiv, Code, Links), ohne HTML aus der Nachricht
+- Verwaltung (`/verwaltung`): Topics (Anzeigename, Icon, Farbe, stumm, Aufbewahrung), Publish-Tokens, eigene Geräte und ihre Abos, QR-Code mit der Server-Adresse für die App
 
 ## iOS-App
 

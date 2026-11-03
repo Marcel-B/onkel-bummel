@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.OpenIdConnect;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -41,6 +42,7 @@ public sealed class OnkelBummelApiFactory : WebApplicationFactory<Program>, IAsy
         builder.UseSetting("Monitoring:InventoryEnabled", "false");
         builder.UseSetting("Jobs:Enabled", "false");
         builder.UseSetting("Oidc:Issuer", "https://identity.example.ts.net");
+        builder.UseSetting("Oidc:WebClientSecret", "web-secret");
         builder.UseSetting("Server:PublicUrl", PublicUrl);
         Directory.CreateDirectory(DataPath);
         var apnsKeyPath = Path.Combine(DataPath, "apns.p8");
@@ -52,6 +54,7 @@ public sealed class OnkelBummelApiFactory : WebApplicationFactory<Program>, IAsy
         builder.ConfigureTestServices(services =>
         {
             services.Configure<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme, o => o.BackchannelHttpHandler = Identity.Backchannel);
+            services.Configure<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme, o => o.BackchannelHttpHandler = Identity.Backchannel);
             foreach (var name in new[] { ActionRunner.HttpClientName, AttachmentStore.HttpClientName, BackupJob.HttpClientName })
                 services.AddHttpClient(name).ConfigurePrimaryHttpMessageHandler(() => Remote);
             services.AddHttpClient(ApnsClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Apns);

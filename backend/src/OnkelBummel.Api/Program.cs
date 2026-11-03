@@ -13,6 +13,7 @@ using OnkelBummel.Api.Monitoring;
 using OnkelBummel.Api.Options;
 using OnkelBummel.Api.Publishing;
 using OnkelBummel.Api.Push;
+using OnkelBummel.Api.Web;
 using Prometheus;
 
 // Docker's health check: the aspnet image has neither curl nor wget, so the app asks itself.
@@ -50,7 +51,7 @@ builder.Services.AddDatabase();
 builder.Services.AddMonitoring(builder.Configuration);
 builder.Services.AddProblemDetails();
 builder.Services.AddOnkelBummelAuth();
-// Keys for protected data (later the login cookie of the web interface) belong to the data folder; inside the
+// Keys for protected data (the login cookie of the web interface) belong to the data folder; inside the
 // container they would be gone with every update.
 builder.Services.AddDataProtection();
 builder.Services.AddOptions<KeyManagementOptions>().Configure<IOptions<StorageOptions>, ILoggerFactory>((options, storage, loggers) =>
@@ -138,12 +139,15 @@ app.Use(async (context, next) =>
     await next(context);
 });
 
+app.UseWebInterface();
+
 // Metrics come first, so they see the status codes the exception handler and status code pages set.
 app.UseRouting();
 app.UseHttpMetrics();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 app.UseAuthentication();
+app.UseCookieRequestCheck();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
@@ -157,6 +161,8 @@ app.MapGroup("/api/v1")
     .MapStreamEndpoints()
     .MapPublishTokenEndpoints()
     .MapDeviceEndpoints();
+app.MapGroup("/auth").MapWebLoginEndpoints();
+app.MapWebInterface();
 
 if (app.Configuration.GetValue("Database:InitializeOnStartup", true))
     await app.Services.InitializeDatabaseAsync();

@@ -8,3 +8,7 @@ TestResults/
 
 # Database and attachments of local runs
 backend/src/OnkelBummel.Api/local-data/
+
+# Web interface: dependencies, and the build that goes into the server's wwwroot
+backend/web/node_modules/
+backend/src/OnkelBummel.Api/wwwroot/

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
@@ -28,15 +29,22 @@ public static class AuthSetup
 
     public const string AdminRole = "admin";
 
+    /// <summary>Session cookie of the web interface; the tokens from the identity server stay in the server.</summary>
+    public const string CookieName = "onkel-bummel";
+
     public static IServiceCollection AddOnkelBummelAuth(this IServiceCollection services)
     {
         services.AddAuthentication(ApiScheme)
-            .AddPolicyScheme(ApiScheme, "Publish token or access token", options =>
-                options.ForwardDefaultSelector = context => PublishTokenHandler.ReadToken(context.Request) is not null
-                    ? PublishTokenHandler.SchemeName
+            .AddPolicyScheme(ApiScheme, "Publish token, access token or session cookie", options =>
+                options.ForwardDefaultSelector = context =>
+                    PublishTokenHandler.ReadToken(context.Request) is not null ? PublishTokenHandler.SchemeName
+                    : WebLogin.UsesCookie(context.Request) ? CookieAuthenticationDefaults.AuthenticationScheme
                     : JwtBearerDefaults.AuthenticationScheme)
             .AddScheme<AuthenticationSchemeOptions, PublishTokenHandler>(PublishTokenHandler.SchemeName, null)
-            .AddJwtBearer();
+            .AddJwtBearer()
+            .AddCookie()
+            .AddOpenIdConnect();
+        services.AddWebLogin();
 
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
             .Configure<IOptions<OidcOptions>>((options, oidc) =>

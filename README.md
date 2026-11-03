@@ -6,7 +6,7 @@ Eigener Benachrichtigungsdienst mit Verlauf, Suche und Bildern, benannt nach mei
 |---|---|
 | Server (C# / .NET 10) | Senden (JSON, multipart, Grafana-Webhook) mit Bildern und Thumbnails, Publish-Tokens, Verlauf mit Suche, Live-Stream (SSE), Actions, Anmeldung per JWT, Aufbewahrung, Aufräumen, Sicherung in die Nextcloud, Metriken und Loki |
 | Push (APNs), Geräte | Push an abonnierte Geräte mit Retry, Bild über signierten Link, Actions als Buttons, Badge |
-| Web-Oberfläche | folgt |
+| Web-Oberfläche (Vue 3) | Anmeldung über den Identity-Server, Timeline live, Suche und Filter, Galerie, Actions, Gelesen und Löschen, Verwaltung von Topics, Tokens und Geräten, QR-Code für die App |
 | iOS-App | Einrichtung mit Login, Inbox, Topics mit Galerie, Suche, Abos, Cache und Live-Updates, Notification Service Extension |
 
 ## Lokal starten
@@ -20,9 +20,20 @@ dotnet run --project src/OnkelBummel.Api --launch-profile http
 
 Die App läuft auf http://localhost:8080, die Metriken liegen unter http://localhost:9464/metrics. Datenbank und Anhänge landen in `backend/src/OnkelBummel.Api/local-data/`.
 
+Die Web-Oberfläche liegt in `backend/web` (Vue 3, TypeScript, Tailwind, Pinia, Axios). Voraussetzung: Node.js 26.
+
+```bash
+cd backend/web
+npm install
+npm run build   # nach backend/src/OnkelBummel.Api/wwwroot, dann liefert sie der Server unter :8080 aus
+npm run dev     # oder mit Hot Reload unter http://localhost:5173, /api und /auth gehen an :8080
+```
+
+Die Anmeldung braucht einen Identity-Server, lokal `http://localhost:5001` mit dem Client `onkel-bummel-web` (Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/auth/signed-out`) und dem Secret in `Oidc__WebClientSecret`. Der Login endet immer auf :8080; das Cookie gilt auch für :5173, weil Cookies den Port nicht beachten.
+
 ## Senden
 
-Zuerst einen Publish-Token anlegen. Solange es die Web-Oberfläche nicht gibt, geht das auf der Kommandozeile, im LXC:
+Zuerst einen Publish-Token anlegen, in der Web-Oberfläche unter Verwaltung → Publish-Tokens oder auf der Kommandozeile, im LXC:
 
 ```bash
 cd /opt/onkel-bummel/deploy
@@ -67,7 +78,9 @@ Push im LXC einschalten: den APNs-Schlüssel nach `/etc/onkel-bummel/secrets/apn
 ```bash
 cd backend
 dotnet test
-cd ../ios/OnkelBummelKit
+cd web
+npm test
+cd ../../ios/OnkelBummelKit
 swift test
 ```
 

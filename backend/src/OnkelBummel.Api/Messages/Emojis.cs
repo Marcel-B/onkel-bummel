@@ -2,7 +2,7 @@ namespace OnkelBummel.Api.Messages;
 
 /// <summary>
 /// Tags with a known short name show as an emoji in front of the title, the others as tags. The clients keep the
-/// same list (the iOS app in <c>Emoji.swift</c>).
+/// same list (the iOS app in <c>Emoji.swift</c>, the web interface in <c>web/src/lib/emojis.ts</c>).
 /// </summary>
 public static class Emojis
 {

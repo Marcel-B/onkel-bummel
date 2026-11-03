@@ -1,3 +1,11 @@
+# Web interface (Vue): tests, type check and build into the wwwroot of the server
+FROM node:26-alpine AS web
+WORKDIR /src/web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm test && npm run build
+
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
@@ -6,6 +14,7 @@ COPY src/OnkelBummel.Api/OnkelBummel.Api.csproj src/OnkelBummel.Api/
 RUN dotnet restore src/OnkelBummel.Api/OnkelBummel.Api.csproj
 
 COPY src/ src/
+COPY --from=web /src/src/OnkelBummel.Api/wwwroot src/OnkelBummel.Api/wwwroot
 RUN dotnet publish src/OnkelBummel.Api/OnkelBummel.Api.csproj -c Release -o /app --no-restore
 
 # Only built on request (docker build --target test); the update in the LXC deploys a commit only when this passes.

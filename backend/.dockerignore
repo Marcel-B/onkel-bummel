@@ -2,3 +2,5 @@
 **/obj/
 **/local-data/
 **/TestResults/
+**/node_modules/
+src/OnkelBummel.Api/wwwroot/

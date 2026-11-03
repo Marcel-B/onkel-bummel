@@ -27,13 +27,49 @@ public sealed class TestIdentity
         jwk.Alg = SecurityAlgorithms.RsaSha256;
         Backchannel.Respond = request => request.RequestUri!.AbsolutePath switch
         {
-            "/.well-known/openid-configuration" => StubHttp.Json(new { issuer = Issuer, jwks_uri = Issuer + ".well-known/jwks" }),
+            "/.well-known/openid-configuration" => StubHttp.Json(new
+            {
+                issuer = Issuer,
+                jwks_uri = Issuer + ".well-known/jwks",
+                authorization_endpoint = Issuer + "connect/authorize",
+                token_endpoint = Issuer + "connect/token",
+                end_session_endpoint = Issuer + "connect/endsession",
+            }),
             "/.well-known/jwks" => StubHttp.Json(new
             {
                 keys = new[] { new { kty = jwk.Kty, use = jwk.Use, alg = jwk.Alg, kid = jwk.Kid, n = jwk.N, e = jwk.E } },
             }),
+            "/connect/token" => StubHttp.Json(new
+            {
+                access_token = "opaque",
+                token_type = "Bearer",
+                expires_in = 3600,
+                id_token = CreateIdToken(WebLoginNonce ?? throw new InvalidOperationException("WebLoginNonce is not set."), WebLoginRoles),
+            }),
             _ => new HttpResponseMessage(HttpStatusCode.NotFound),
         };
+    }
+
+    /// <summary>Nonce of the pending web login, from the redirect to the authorize endpoint; goes into the next ID token.</summary>
+    public string? WebLoginNonce { get; set; }
+
+    /// <summary>Roles in the ID tokens of the web login.</summary>
+    public object? WebLoginRoles { get; set; } = "onkel-bummel";
+
+    /// <summary>An ID token for the web client, as the token endpoint returns it after the login.</summary>
+    public string CreateIdToken(string nonce, object? roles, string subject = "user-1")
+    {
+        var claims = new Dictionary<string, object> { ["sub"] = subject, ["name"] = "marcel", ["nonce"] = nonce };
+        if (roles is not null)
+            claims["role"] = roles;
+        return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor
+        {
+            Issuer = Issuer,
+            Audience = "onkel-bummel-web",
+            Claims = claims,
+            Expires = DateTime.UtcNow.AddMinutes(30),
+            SigningCredentials = new SigningCredentials(Key, SecurityAlgorithms.RsaSha256),
+        });
     }
 
     /// <param name="roles">A string, an array of strings, or null for no role claim.</param>
