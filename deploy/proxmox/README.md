@@ -6,18 +6,13 @@
 
 - Im Tailnet MagicDNS und HTTPS-Zertifikate einschalten (Admin-Konsole > DNS).
 - Einen Auth Key anlegen (Settings > Keys > Generate auth key). Ohne Key zeigt das Skript einen Login-Link.
-- Bei privatem Repository: Fine-grained Token auf GitHub mit Zugriff nur auf `onkel-bummel` und „Contents: Read-only“.
+- Nur bei einem privaten Fork: Fine-grained Token mit „Contents: Read-only“ als `GIT_TOKEN`.
 
 ## Anlegen
 
 ```bash
-# auf dem Mac
-scp deploy/proxmox/create-lxc.sh root@pve:
-```
-
-```bash
 # in der Proxmox-Shell als root
-TS_AUTHKEY=tskey-auth-... GIT_TOKEN=github_pat_... bash create-lxc.sh
+TS_AUTHKEY=tskey-auth-... bash <(curl -fsSL https://raw.githubusercontent.com/Marcel-B/onkel-bummel/main/deploy/proxmox/create-lxc.sh)
 ```
 
 Das Skript holt das Repository in den LXC und ruft dort `setup.sh` auf. Am Ende stehen die Adressen da. Bricht es ab, mit derselben `CTID=…` erneut aufrufen: Es macht dort weiter, Einstellungen und Daten bleiben.

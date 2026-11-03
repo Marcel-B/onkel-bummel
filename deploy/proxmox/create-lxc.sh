@@ -61,12 +61,15 @@ if pct status "$CTID" &>/dev/null; then
 else
     info "Debian-Vorlage suchen"
     pveam update >/dev/null
+    # Proxmox listet Vorlagen für amd64 und arm64; ohne Filter gewinnt beim Sortieren arm64
+    ARCH="$(dpkg --print-architecture)"
     TEMPLATE=""
     for release in 13 12; do
-        TEMPLATE="$(pveam available --section system | awk -v r="debian-$release-standard" '$2 ~ r {print $2}' | sort -V | tail -n1)"
+        TEMPLATE="$(pveam available --section system |
+            awk -v r="^debian-$release-standard_" -v a="_$ARCH.tar" '$2 ~ r && index($2, a) {print $2}' | sort -V | tail -n1)"
         [[ -n $TEMPLATE ]] && break
     done
-    [[ -n $TEMPLATE ]] || fail "Keine debian-13- oder debian-12-standard-Vorlage gefunden."
+    [[ -n $TEMPLATE ]] || fail "Keine debian-13- oder debian-12-standard-Vorlage für $ARCH gefunden."
     if ! pveam list "$TEMPLATE_STORAGE" | grep -q "$TEMPLATE"; then
         info "Vorlage $TEMPLATE herunterladen"
         pveam download "$TEMPLATE_STORAGE" "$TEMPLATE"

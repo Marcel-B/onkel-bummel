@@ -33,7 +33,7 @@ Onkel Bummel läuft in einem LXC auf Proxmox, erreichbar nur im Tailnet unter `h
 
 ```bash
 # in der Proxmox-Shell als root
-TS_AUTHKEY=tskey-auth-... bash create-lxc.sh
+TS_AUTHKEY=tskey-auth-... bash <(curl -fsSL https://raw.githubusercontent.com/Marcel-B/onkel-bummel/main/deploy/proxmox/create-lxc.sh)
 ```
 
 Einstellungen, Updates und Pfade: [deploy/proxmox/README.md](deploy/proxmox/README.md).
