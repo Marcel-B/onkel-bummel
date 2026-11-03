@@ -65,6 +65,28 @@ public sealed class MessageReadTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Filters_by_priority_tags_and_time()
+    {
+        async Task<long> Send(int priority, string[] tags)
+        {
+            var response = await _sender.PostAsJsonAsync("/api/v1/messages", new { topic = "garage", message = "x", priority, tags }, CancellationToken);
+            return (await response.Content.ReadFromJsonAsync<MessageDto>(CancellationToken))!.Id;
+        }
+        var low = await Send(2, ["tor"]);
+        var urgent = await Send(5, ["tor", "warning"]);
+        var high = await Send(4, ["licht"]);
+        await using (var db = _factory.CreateDbContext())
+            await db.Messages.Where(m => m.Id == low).ExecuteUpdateAsync(s => s.SetProperty(m => m.CreatedAt, new DateTime(2026, 1, 10, 12, 0, 0, DateTimeKind.Utc)), CancellationToken);
+
+        Assert.Equal([high, urgent], await IdsAsync("min_priority=4"));
+        Assert.Equal([urgent, low], await IdsAsync("tags=tor"));
+        Assert.Equal([urgent], await IdsAsync("tags=tor,warning"));
+        Assert.Equal([low], await IdsAsync("since=2026-01-10T00:00:00Z&until=2026-01-11T00:00:00Z"));
+        Assert.Equal([high, urgent], await IdsAsync("since=2026-01-11T00:00:00%2B01:00"));
+        Assert.Equal(HttpStatusCode.BadRequest, (await _user.GetAsync("/api/v1/messages?min_priority=6", CancellationToken)).StatusCode);
+    }
+
+    [Fact]
     public async Task Gets_and_deletes_a_message_with_its_files()
     {
         var id = await SendAsync("kamera", "Bewegung", image: true);

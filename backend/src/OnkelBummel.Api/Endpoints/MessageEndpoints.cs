@@ -42,6 +42,10 @@ public static class MessageEndpoints
         string? q,
         string? unread,
         [FromQuery(Name = "has_image")] string? hasImage,
+        [FromQuery(Name = "min_priority")] int? minPriority,
+        string? tags,
+        DateTimeOffset? since,
+        DateTimeOffset? until,
         long? before,
         long? after,
         int? limit,
@@ -50,6 +54,8 @@ public static class MessageEndpoints
         var take = limit ?? DefaultLimit;
         if (take is < 1 or > MaxLimit)
             return Problems.BadRequest($"„limit“ geht von 1 bis {MaxLimit}.");
+        if (minPriority is < 1 or > 5)
+            return Problems.BadRequest("„min_priority“ geht von 1 bis 5.");
 
         IQueryable<Message> query = db.Messages.AsNoTracking();
         if (Topics.Parse(topics) is { } names)
@@ -63,6 +69,15 @@ public static class MessageEndpoints
             query = query.Where(m => m.ReadAt == null);
         if (Flag(hasImage))
             query = query.Where(m => m.Attachments.Any(a => a.ContentType.StartsWith("image/")));
+        if (minPriority is not null)
+            query = query.Where(m => m.Priority >= minPriority);
+        // Every tag given must be on the message.
+        foreach (var tag in (tags ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct())
+            query = query.Where(m => m.Tags.Contains(tag));
+        if (since is not null)
+            query = query.Where(m => m.CreatedAt >= since.Value.UtcDateTime);
+        if (until is not null)
+            query = query.Where(m => m.CreatedAt < until.Value.UtcDateTime);
         if (before is not null)
             query = query.Where(m => m.Id < before);
         if (after is not null)

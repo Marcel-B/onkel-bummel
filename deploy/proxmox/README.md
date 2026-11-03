@@ -70,7 +70,7 @@ pct exec <CTID> -- systemctl disable --now onkel-bummel-update.timer   # automat
 
 ## Publish-Tokens
 
-Sender brauchen einen Token. Bis zur Web-Oberfläche legt man ihn im LXC auf der Kommandozeile an; die Topics kommagetrennt, `'*'` für alle:
+Sender brauchen einen Token. Am einfachsten legt man ihn in der Web-Oberfläche unter Verwaltung → Publish-Tokens an, oder im LXC auf der Kommandozeile; die Topics kommagetrennt, `'*'` für alle:
 
 ```bash
 pct exec <CTID> -- docker compose -f /opt/onkel-bummel/deploy/docker-compose.yml exec onkel-bummel \
