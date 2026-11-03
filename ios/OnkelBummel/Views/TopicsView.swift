@@ -147,9 +147,9 @@ struct GalleryView: View {
                     let message = cached.message
                     ForEach(message.attachments.filter { $0.thumbnailUrl != nil }) { image in
                         NavigationLink(value: message.id) {
-                            RemoteImage(path: image.thumbnailUrl!)
-                                .frame(minWidth: 0, maxWidth: .infinity)
-                                .aspectRatio(1, contentMode: .fill)
+                            Color.clear
+                                .aspectRatio(1, contentMode: .fit)
+                                .overlay { RemoteImage(path: image.thumbnailUrl!) }
                                 .clipped()
                         }
                     }

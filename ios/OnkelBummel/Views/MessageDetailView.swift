@@ -59,8 +59,11 @@ struct MessageDetailView: View {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 8)], spacing: 8) {
                         ForEach(Array(images.enumerated()), id: \.element.id) { index, image in
                             Button { viewerIndex = index } label: {
-                                RemoteImage(path: image.thumbnailUrl!)
-                                    .frame(minHeight: 140, maxHeight: 140)
+                                // The cell sets the size; the picture fills it and is cut to it.
+                                Color.clear
+                                    .frame(height: 140)
+                                    .frame(maxWidth: .infinity)
+                                    .overlay { RemoteImage(path: image.thumbnailUrl!) }
                                     .clipShape(RoundedRectangle(cornerRadius: 10))
                             }
                             .buttonStyle(.plain)
