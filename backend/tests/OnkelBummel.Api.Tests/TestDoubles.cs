@@ -38,10 +38,11 @@ public sealed class TestIdentity
 
     /// <param name="roles">A string, an array of strings, or null for no role claim.</param>
     public string CreateToken(
-        object? roles = null, string audience = Audience, string issuer = Issuer, DateTime? expires = null, SecurityKey? key = null)
+        object? roles = null, string audience = Audience, string issuer = Issuer, DateTime? expires = null, SecurityKey? key = null,
+        string subject = "user-1")
     {
         var expiresAt = expires ?? DateTime.UtcNow.AddMinutes(30);
-        var claims = new Dictionary<string, object> { ["sub"] = "user-1" };
+        var claims = new Dictionary<string, object> { ["sub"] = subject };
         if (roles is not null)
             claims["role"] = roles;
         return new JsonWebTokenHandler().CreateToken(new SecurityTokenDescriptor

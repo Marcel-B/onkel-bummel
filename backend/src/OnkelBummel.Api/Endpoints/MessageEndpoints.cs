@@ -165,5 +165,8 @@ internal static class Problems
     public static IResult NotFound(string detail) =>
         TypedResults.Problem(detail, statusCode: StatusCodes.Status404NotFound, title: "Nicht gefunden");
 
+    public static IResult Forbidden(string detail) =>
+        TypedResults.Problem(detail, statusCode: StatusCodes.Status403Forbidden, title: "Nicht erlaubt");
+
     public static IResult MessageNotFound(long id) => NotFound($"Nachricht {id} gibt es nicht.");
 }

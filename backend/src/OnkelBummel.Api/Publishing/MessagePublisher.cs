@@ -7,17 +7,19 @@ using OnkelBummel.Api.Data;
 using OnkelBummel.Api.Messages;
 using OnkelBummel.Api.Monitoring;
 using OnkelBummel.Api.Options;
+using OnkelBummel.Api.Push;
 
 namespace OnkelBummel.Api.Publishing;
 
 /// <param name="Duplicate">A repeat with a known Idempotency-Key; <see cref="Message"/> is the original.</param>
 public sealed record PublishResult(MessageDto Message, bool Duplicate);
 
-/// <summary>Checks a message, stores it with its attachments and tells the live connections.</summary>
+/// <summary>Checks a message, stores it with its attachments, tells the live connections and queues the pushes.</summary>
 public sealed class MessagePublisher(
     OnkelBummelDbContext db,
     AttachmentStore attachments,
     MessageEvents events,
+    PushQueue push,
     IOptions<LimitsOptions> limits,
     TimeProvider time,
     ILogger<MessagePublisher> logger)
@@ -101,6 +103,7 @@ public sealed class MessagePublisher(
         OnkelBummelMetrics.AttachmentBytes.Inc(stored.Sum(a => a.Size));
         var dto = MessageDto.From(message);
         events.Publish(new LiveEvent(MessageEvents.MessageType, message.Topic, dto));
+        push.Enqueue(message.Id);
         logger.LogInformation("Message {Id} stored in {Topic} from {Source} with {Attachments} attachments",
             message.Id, message.Topic, source, stored.Count);
         return new PublishResult(dto, Duplicate: false);

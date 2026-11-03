@@ -4,6 +4,7 @@ using OnkelBummel.Api.Auth;
 using OnkelBummel.Api.Data;
 using OnkelBummel.Api.Messages;
 using OnkelBummel.Api.Publishing;
+using OnkelBummel.Api.Push;
 
 namespace OnkelBummel.Api.Endpoints;
 
@@ -20,6 +21,20 @@ public static class AttachmentEndpoints
         attachments.MapGet("/{id}/thumb", (string id, HttpContext http, OnkelBummelDbContext db, AttachmentStore store, CancellationToken cancellationToken) =>
                 ServeAsync(id, thumbnail: true, download: false, http, db, store, cancellationToken))
             .WithSummary("JPEG of at most 600 px on the longest side");
+
+        // For the Notification Service Extension, which has no login: the signed link from the push is enough.
+        api.MapGet("/attachments/{id}/push-thumb", async (
+                    string id, long? expires, string? signature, HttpContext http, OnkelBummelDbContext db, AttachmentStore store,
+                    ThumbnailUrlSigner signer, CancellationToken cancellationToken) =>
+                {
+                    if (expires is null || !signer.IsValid(id, expires.Value, signature))
+                        return Problems.Forbidden("Der Link ist abgelaufen oder ungültig.");
+                    var result = await ServeAsync(id, thumbnail: true, download: false, http, db, store, cancellationToken);
+                    http.Response.Headers.CacheControl = "private, max-age=900";
+                    return result;
+                })
+            .AllowAnonymous()
+            .WithSummary("Thumbnail by a signed link from a push, valid for 15 minutes");
 
         return api;
     }
