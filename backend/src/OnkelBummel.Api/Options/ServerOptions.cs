@@ -29,6 +29,12 @@ public sealed class LimitsOptions
 
     /// <summary>Largest attachment taken, per file.</summary>
     public long MaxFileBytes { get; set; } = 20 * 1024 * 1024;
+
+    /// <summary>Most attachments on one message.</summary>
+    public int MaxFilesPerMessage { get; set; } = 10;
+
+    /// <summary>Largest request body taken when sending a message, all files and Base64 included.</summary>
+    public long MaxRequestBytes { get; set; } = 100 * 1024 * 1024;
 }
 
 public sealed class OidcOptions
@@ -81,4 +87,18 @@ public sealed class BackupOptions
 
     /// <summary>Time of day for the nightly backup, in the server's time zone.</summary>
     public TimeOnly At { get; set; } = new(3, 30);
+
+    public bool IsConfigured =>
+        NextcloudWebDavUrl is not null && !string.IsNullOrEmpty(NextcloudUserName) && !string.IsNullOrEmpty(NextcloudAppPassword);
+}
+
+public sealed class JobsOptions
+{
+    public const string SectionName = "Jobs";
+
+    /// <summary>Turns the background jobs (retention, cleanup, backup) off, e.g. for tests.</summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Time of day for retention and cleanup, in the server's time zone.</summary>
+    public TimeOnly MaintenanceAt { get; set; } = new(4, 15);
 }

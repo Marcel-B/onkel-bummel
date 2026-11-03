@@ -26,11 +26,15 @@ Nicht im Umfang: mehrere Nutzer, Android, MQTT, ntfy-Kompatibilität, E-Mail/SMS
 - **Topic:** einfacher Name wie `garage`, `slipways`, `filomat`, `alarme` (`[a-z0-9_-]{1,64}`). Ein Topic entsteht mit der ersten Nachricht. Einstellbar sind Anzeigename, Icon, Farbe, Stummschaltung (kein Push) und Aufbewahrung in Tagen. Nicht erlaubt sind die Namen `api`, `auth`, `static`, `health`, `metrics` und `*`.
 - **Action:** Button an einer Nachricht mit Label und HTTP-Aufruf (Methode, URL, optional Header und Body, `clear`). Den Aufruf führt der Server aus: Er steht im Heimnetz und erreicht das Ziel immer, das Handy nicht unbedingt. Das letzte Ergebnis (Status, Zeit) wird an der Nachricht gespeichert. `clear` markiert die Nachricht danach als gelesen.
 - **Gerät:** eine iOS-Installation mit APNs-Token, Umgebung (`sandbox`/`production`) und abonnierten Topics (`*` = alle).
-- **Publish-Token:** statischer Schlüssel für Sender (Skripte, Dienste, Grafana), auf Topics beschränkt oder `*`. Wird einmal angezeigt und nur als Hash gespeichert.
+- **Publish-Token:** statischer Schlüssel für Sender (Skripte, Dienste, Grafana), auf Topics beschränkt oder `*`. Er trägt 256 Zufallsbits, wird einmal angezeigt und nur als SHA-256-Hash gespeichert. Anlegen über `POST publish-tokens` oder, solange es keine Web-Oberfläche gibt, auf der Kommandozeile: `dotnet OnkelBummel.Api.dll --create-token <name> <topics>` (außerdem `--list-tokens` und `--delete-token <id>`).
 
 ## Senden
 
-Auth: `Authorization: Bearer ob_…`. Fehler kommen als Problem-JSON (RFC 7807): `400` ungültig, `401` ohne gültiges Token, `403` Topic nicht erlaubt, `413` zu groß, `415` falscher Inhaltstyp.
+Auth: `Authorization: Bearer ob_…`. Ein angemeldeter Benutzer (Access Token mit Rolle) darf ebenfalls senden, an jedes Topic. Fehler kommen als Problem-JSON (RFC 7807): `400` ungültig, `401` ohne gültiges Token, `403` Topic nicht erlaubt, `413` zu groß, `415` falscher Inhaltstyp.
+
+Grenzen: Titel 250 Zeichen, Text 32 000 Zeichen (leer nur mit Anhang), höchstens 10 Tags mit je 64 Zeichen, 3 Actions (Label 40 Zeichen, Methode `GET`, `POST`, `PUT`, `PATCH` oder `DELETE`, Standard `POST`), `Limits:MaxFilesPerMessage` Anhänge (Standard 10) und `Limits:MaxRequestBytes` für die ganze Anfrage (Standard 100 MB). Die Klick-URL darf kein `javascript:`, `data:`, `vbscript:` oder `file:` sein.
+
+Anhänge: Der Typ wird an den ersten Bytes erkannt, nicht an Name oder Content-Type. Angenommen werden JPEG, PNG, GIF, WebP und HEIC, außerdem PDF und Text (UTF-8, als `text/…` oder mit Endung `.txt`, `.log`, `.csv`, `.json`, `.md`). Alles andere gibt `415`. Ein Bild, das sich nicht lesen lässt, gibt `400`. HEIC kann der Server nicht dekodieren und speichert es ohne Thumbnail. Thumbnails sind immer JPEG, weil Mitteilungsanhänge unter iOS kein WebP nehmen.
 
 ### `POST /api/v1/messages` mit JSON
 
@@ -54,7 +58,7 @@ Auth: `Authorization: Bearer ob_…`. Fehler kommen als Problem-JSON (RFC 7807):
 
 ### `POST /api/v1/messages` mit `multipart/form-data`
 
-Felder `topic`, `title`, `message`, `priority`, `tags` (kommagetrennt), `click`, `actions` (JSON-String wie oben) und beliebig viele Dateien im Feld `file`:
+Felder `topic`, `title`, `message`, `priority`, `tags` (kommagetrennt), `click`, `actions` (JSON-String wie oben) und beliebig viele Dateien im Feld `file` (Dateien in anderen Feldern zählen auch):
 
 ```bash
 curl -H "Authorization: Bearer ob_…" -F topic=kamera -F message="Bewegung an der Einfahrt" -F file=@snap.jpg \
@@ -63,12 +67,14 @@ curl -H "Authorization: Bearer ob_…" -F topic=kamera -F message="Bewegung an d
 
 ### `POST /api/v1/webhooks/grafana?topic=alarme`
 
-Nimmt den Payload eines Grafana-Webhook-Kontaktpunkts direkt an. `firing` wird zu Priorität 4 mit Titel „Alarm: <alertname>“, `resolved` zu Priorität 2 mit „Wieder gut: <alertname>“. Text = die `summary`-Annotationen, Klick-URL = `externalURL`, Tag `grafana`.
+Nimmt den Payload eines Grafana-Webhook-Kontaktpunkts direkt an. `firing` wird zu Priorität 4 mit Titel „Alarm: <alertname>“, `resolved` zu Priorität 2 mit „Wieder gut: <alertname>“. Text = die `summary`-Annotationen (sonst `description`), Klick-URL = `externalURL`, Tag `grafana`, Quelle `grafana`.
+
+Eine Gruppe mit mehreren Alarmen wird eine Nachricht: Titel „Alarm: A (+2)“, im Text eine Zeile pro Alarm. Sind in einer Gruppe, die noch feuert, einzelne Alarme schon vorbei, stehen sie als „Wieder gut: …“ darunter. Das Token braucht das Recht für das Topic aus `?topic=`.
 
 ### Antwort und Wiederholungen
 
-- `201 Created` mit der gespeicherten Nachricht (`id`, `topic`, `createdAt`, `attachments`, …)
-- Mit dem Header `Idempotency-Key` gibt eine Wiederholung mit demselben Schlüssel innerhalb von 24 Stunden die ursprüngliche Antwort zurück und legt keine zweite Nachricht an.
+- `201 Created` mit der gespeicherten Nachricht (`id`, `topic`, `title`, `message`, `priority`, `tags`, `click`, `source`, `createdAt`, `readAt`, `attachments`, `actions`) und `Location: /api/v1/messages/<id>`. Zeiten sind UTC (ISO 8601 mit `Z`). Header und Body der Actions gibt die API nicht wieder heraus, sie können Schlüssel des Ziels enthalten.
+- Mit dem Header `Idempotency-Key` (höchstens 200 Zeichen) gibt eine Wiederholung mit demselben Schlüssel innerhalb von 24 Stunden die ursprüngliche Antwort zurück, mit `Idempotent-Replayed: true`, und legt keine zweite Nachricht an. Danach ist der Schlüssel wieder frei.
 - Tags mit bekannten Emoji-Kurznamen (`tada`, `white_check_mark`, `warning`, `rotating_light`, …) zeigen die Clients als Emoji vor dem Titel, die übrigen als Tags.
 
 ### Ablauf
@@ -85,15 +91,15 @@ Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Co
 
 | Aufruf | Zweck |
 |---|---|
-| `GET messages?topics=a,b&q=&unread=1&hasImage=1&before=<id>&after=<id>&limit=50` | Verlauf, neueste zuerst; `q` ist eine Volltextsuche über Titel, Text und Tags |
-| `GET messages/{id}`, `DELETE messages/{id}` | eine Nachricht |
-| `POST messages/{id}/read`, `POST messages/read` | gelesen setzen, einzeln oder gesammelt (`{"topic": …}` oder alle) |
-| `POST messages/{id}/actions/{index}` | Action ausführen |
-| `GET topics`, `PATCH topics/{name}` | Topics mit Anzahl gesamt/ungelesen und letzter Nachricht; Einstellungen ändern |
-| `GET attachments/{id}`, `GET attachments/{id}/thumb` | Original und Thumbnail |
-| `GET stream?topics=…` | Server-Sent Events mit neuen Nachrichten und Gelesen-Änderungen |
+| `GET messages?topics=a,b&q=&unread=1&has_image=1&before=<id>&after=<id>&limit=50` | Verlauf als `{"messages": […], "hasMore": …}`, neueste zuerst; mit `after` (ohne `before`) älteste zuerst, damit man mit der letzten ID weiterblättern kann. `q` ist eine Volltextsuche über Titel, Text und Tags (jedes Wort als Präfix). `limit` 1–200 |
+| `GET messages/{id}`, `DELETE messages/{id}` | eine Nachricht; Löschen entfernt auch die Dateien |
+| `POST messages/{id}/read`, `POST messages/read` | gelesen setzen, einzeln oder gesammelt: `{"topic": …, "upToId": …}`, beides optional; ohne `upToId` alles, was es gerade gibt |
+| `POST messages/{id}/actions/{index}` | Action ausführen; Antwort `{"index", "status", "ok", "runAt", "markedRead"}`, `status` 0 heißt: Ziel nicht erreicht |
+| `GET topics`, `PATCH topics/{name}` | Topics mit Anzahl gesamt/ungelesen und letzter Nachricht, zuletzt aktive zuerst; Einstellungen ändern (`displayName`, `icon`, `color` als `#rrggbb`, `muted`, `retentionDays`; nur die mitgeschickten Felder, `null` löscht) |
+| `GET attachments/{id}`, `GET attachments/{id}/thumb` | Original (`?download=true` zum Speichern) und Thumbnail |
+| `GET stream?topics=…` | Server-Sent Events: `message` (die Nachricht wie oben), `read` (`ids` oder `topic` + `upToId`), `deleted` (`id`, `topic`) und `ping` beim Verbinden und alle 25 Sekunden |
 | `POST devices`, `PUT devices/{id}/subscriptions`, `DELETE devices/{id}` | Gerät registrieren, Abos setzen, abmelden |
-| `GET/POST/DELETE publish-tokens` | Publish-Tokens verwalten |
+| `GET/POST/DELETE publish-tokens` | Publish-Tokens verwalten; `POST {"name", "topics": [...]}` gibt den Schlüssel als `token` zurück, nur dieses eine Mal |
 | `GET config` (ohne Anmeldung) | Issuer, Client-ID der App und Audience für die Einrichtung der App |
 | `GET /health` (ohne Anmeldung) | Zustand für Docker und Blackbox-Probes |
 
@@ -172,9 +178,11 @@ Mit `Monitoring:Loki:Url` gehen die Logzeilen zusätzlich an Loki, mit den Label
 
 ## Hintergrund-Jobs
 
-- `retention` (täglich): löscht Nachrichten, die älter sind als die Aufbewahrung ihres Topics
-- `cleanup` (täglich): löscht Anhang-Dateien ohne Nachricht
-- `backup` (nächtlich, `Backup:At`): SQLite-Online-Backup plus Anhänge als ZIP per WebDAV in die Nextcloud, optional mit AES-256 verschlüsselt. Ohne Nextcloud-Zugang aus.
+- `retention` (täglich, `Jobs:MaintenanceAt`): löscht Nachrichten, die älter sind als die Aufbewahrung ihres Topics
+- `cleanup` (gleich danach): löscht Anhang-Dateien ohne Nachricht, die älter als eine Stunde sind, und gibt Idempotency-Keys nach 24 Stunden frei
+- `backup` (nächtlich, `Backup:At`): SQLite-Online-Backup plus Anhänge als ZIP per WebDAV in die Nextcloud, wie `identity-backup` im Identity-Server. Es entstehen `onkel-bummel-mon.zip` … `onkel-bummel-sun.zip` (die letzten sieben Tage) und `onkel-bummel-2026-10.zip` (der letzte Stand jedes Monats); in der Nextcloud wird nichts gelöscht. Mit `Backup:Passphrase` werden sie mit AES-256 verschlüsselt (`.zip.enc`, Format von `openssl enc -aes-256-cbc -pbkdf2 -iter 600000`). Ohne Nextcloud-Zugang aus.
+
+Die Zeiten gelten in der Zeitzone des Containers (`TZ`).
 
 ## Datenmodell (SQLite)
 
@@ -197,11 +205,12 @@ Alles in `appsettings.json`, überschreibbar per Umgebungsvariable (`Abschnitt__
 |---|---|
 | `Server` | `PublicUrl`, `UseForwardedHeaders` |
 | `Storage` | `DataPath` (Datenbank und Anhänge, im Container `/data`) |
-| `Limits` | `MaxFileBytes` |
+| `Limits` | `MaxFileBytes`, `MaxFilesPerMessage`, `MaxRequestBytes` |
 | `Oidc` | `Issuer`, `Audience`, `WebClientId`, `WebClientSecret`, `IosClientId`, `RequiredRole` |
 | `Apns` | `KeyPath`, `KeyId`, `TeamId`, `BundleId` |
 | `Monitoring` | `MetricsPort`, `InventoryInterval`, `Loki:Url`, `Loki:Host` |
 | `Backup` | `NextcloudWebDavUrl`, `NextcloudUserName`, `NextcloudAppPassword`, `Passphrase`, `At` |
+| `Jobs` | `Enabled`, `MaintenanceAt` (Uhrzeit für `retention` und `cleanup`, Standard 04:15) |
 
 ## Betrieb
 

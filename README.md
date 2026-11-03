@@ -4,8 +4,8 @@ Eigener Benachrichtigungsdienst mit Verlauf, Suche und Bildern, benannt nach mei
 
 | Teil | Stand |
 |---|---|
-| Server (C# / .NET 10) | Gerüst: Datenbank mit Volltextsuche, Metriken, Loki, Health, `GET /api/v1/config` |
-| Senden, Verlauf, Anmeldung, Push | folgt |
+| Server (C# / .NET 10) | Senden (JSON, multipart, Grafana-Webhook) mit Bildern und Thumbnails, Publish-Tokens, Verlauf mit Suche, Live-Stream (SSE), Actions, Anmeldung per JWT, Aufbewahrung, Aufräumen, Sicherung in die Nextcloud, Metriken und Loki |
+| Push (APNs), Geräte | folgt |
 | Web-Oberfläche | folgt |
 | iOS-App | folgt |
 
@@ -19,6 +19,34 @@ dotnet run --project src/OnkelBummel.Api --launch-profile http
 ```
 
 Die App läuft auf http://localhost:8080, die Metriken liegen unter http://localhost:9464/metrics. Datenbank und Anhänge landen in `backend/src/OnkelBummel.Api/local-data/`.
+
+## Senden
+
+Zuerst einen Publish-Token anlegen. Solange es die Web-Oberfläche nicht gibt, geht das auf der Kommandozeile, im LXC:
+
+```bash
+cd /opt/onkel-bummel/deploy
+docker compose exec onkel-bummel dotnet OnkelBummel.Api.dll --create-token grafana alarme
+docker compose exec onkel-bummel dotnet OnkelBummel.Api.dll --create-token fil-o-mat filomat,kamera
+docker compose exec onkel-bummel dotnet OnkelBummel.Api.dll --list-tokens
+docker compose exec onkel-bummel dotnet OnkelBummel.Api.dll --delete-token <id>
+```
+
+Statt einzelner Topics geht `'*'` für alle. Der Token (`ob_…`) wird nur dieses eine Mal angezeigt. Lokal: `dotnet run --project src/OnkelBummel.Api -- --create-token test '*'`.
+
+```bash
+# Text
+curl -H "Authorization: Bearer ob_…" -H "Content-Type: application/json" \
+  -d '{"topic":"garage","title":"Tor","message":"Das Tor ist offen","priority":4,"tags":["warning"]}' \
+  https://onkel-bummel.<tailnet>.ts.net/api/v1/messages
+
+# mit Bild und Action-Button
+curl -H "Authorization: Bearer ob_…" -F topic=kamera -F message="Bewegung an der Einfahrt" -F file=@snap.jpg \
+  -F 'actions=[{"label":"Licht an","url":"http://haus/licht","method":"POST","clear":true}]' \
+  https://onkel-bummel.<tailnet>.ts.net/api/v1/messages
+```
+
+Grafana: Kontaktpunkt vom Typ Webhook mit der URL `https://onkel-bummel.<tailnet>.ts.net/api/v1/webhooks/grafana?topic=alarme`, unter „Authorization Header“ Schema `Bearer` und als Credentials den Token. Alle Felder und Fehler stehen in der [Spezifikation](docs/SPEC.md#senden).
 
 ## Tests
 

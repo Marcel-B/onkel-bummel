@@ -1,8 +1,17 @@
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.Options;
+using OnkelBummel.Api.Actions;
+using OnkelBummel.Api.Auth;
 using OnkelBummel.Api.Data;
 using OnkelBummel.Api.Endpoints;
+using OnkelBummel.Api.Jobs;
+using OnkelBummel.Api.Messages;
 using OnkelBummel.Api.Monitoring;
 using OnkelBummel.Api.Options;
+using OnkelBummel.Api.Publishing;
 using Prometheus;
 
 // Docker's health check: the aspnet image has neither curl nor wget, so the app asks itself.
@@ -24,7 +33,9 @@ if (args.Contains("--healthcheck"))
 Metrics.SuppressDefaultMetrics(new SuppressDefaultMetricOptions { SuppressMeters = true });
 OnkelBummelMetrics.Register();
 
-var builder = WebApplication.CreateBuilder(args);
+// "--create-token" and friends run against the database and exit; their arguments are no settings.
+var tokenCommand = TokenCommands.IsCommand(args);
+var builder = WebApplication.CreateBuilder(tokenCommand ? [] : args);
 
 builder.Services.AddOptions<ServerOptions>().BindConfiguration(ServerOptions.SectionName);
 builder.Services.AddOptions<StorageOptions>().BindConfiguration(StorageOptions.SectionName);
@@ -32,10 +43,44 @@ builder.Services.AddOptions<LimitsOptions>().BindConfiguration(LimitsOptions.Sec
 builder.Services.AddOptions<OidcOptions>().BindConfiguration(OidcOptions.SectionName);
 builder.Services.AddOptions<ApnsOptions>().BindConfiguration(ApnsOptions.SectionName);
 builder.Services.AddOptions<BackupOptions>().BindConfiguration(BackupOptions.SectionName);
+builder.Services.AddOptions<JobsOptions>().BindConfiguration(JobsOptions.SectionName);
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddDatabase();
 builder.Services.AddMonitoring(builder.Configuration);
 builder.Services.AddProblemDetails();
+builder.Services.AddOnkelBummelAuth();
+// Keys for protected data (later the login cookie of the web interface) belong to the data folder; inside the
+// container they would be gone with every update.
+builder.Services.AddDataProtection();
+builder.Services.AddOptions<KeyManagementOptions>().Configure<IOptions<StorageOptions>, ILoggerFactory>((options, storage, loggers) =>
+    options.XmlRepository = new FileSystemXmlRepository(new DirectoryInfo(Path.Combine(storage.Value.DataPath, "keys")), loggers));
+
+builder.Services.AddSingleton<MessageEvents>();
+builder.Services.AddSingleton<AttachmentStore>();
+builder.Services.AddScoped<MessagePublisher>();
+builder.Services.AddScoped<ActionRunner>();
+builder.Services.AddScoped<RetentionJob>();
+builder.Services.AddScoped<CleanupJob>();
+builder.Services.AddScoped<BackupJob>();
+builder.Services.AddHostedService<JobScheduler>();
+
+const string userAgent = "OnkelBummel (+https://github.com/Marcel-B/onkel-bummel)";
+builder.Services.AddHttpClient(AttachmentStore.HttpClientName, http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(30);
+    http.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
+});
+builder.Services.AddHttpClient(ActionRunner.HttpClientName, http =>
+{
+    http.Timeout = TimeSpan.FromSeconds(15);
+    http.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
+});
+builder.Services.AddHttpClient(BackupJob.HttpClientName, http =>
+{
+    // The archive holds all attachments, which may take a while to upload.
+    http.Timeout = TimeSpan.FromMinutes(30);
+    http.DefaultRequestHeaders.UserAgent.ParseAdd(userAgent);
+});
 builder.Services.AddHealthChecks().AddDbContextCheck<OnkelBummelDbContext>();
 
 var useForwardedHeaders = builder.Configuration.GetValue<bool>($"{ServerOptions.SectionName}:{nameof(ServerOptions.UseForwardedHeaders)}");
@@ -51,6 +96,12 @@ if (useForwardedHeaders)
 }
 
 var app = builder.Build();
+
+if (tokenCommand)
+{
+    await app.Services.InitializeDatabaseAsync();
+    return await TokenCommands.RunAsync(args, app.Services, Console.Out, Console.Error);
+}
 
 if (useForwardedHeaders)
     app.UseForwardedHeaders();
@@ -73,10 +124,19 @@ app.UseRouting();
 app.UseHttpMetrics();
 app.UseExceptionHandler();
 app.UseStatusCodePages();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapHealthChecks("/health");
 app.MapMetrics();
-app.MapGroup("/api/v1").MapConfigEndpoints();
+app.MapGroup("/api/v1")
+    .MapConfigEndpoints()
+    .MapPublishEndpoints()
+    .MapMessageEndpoints()
+    .MapTopicEndpoints()
+    .MapAttachmentEndpoints()
+    .MapStreamEndpoints()
+    .MapPublishTokenEndpoints();
 
 if (app.Configuration.GetValue("Database:InitializeOnStartup", true))
     await app.Services.InitializeDatabaseAsync();
