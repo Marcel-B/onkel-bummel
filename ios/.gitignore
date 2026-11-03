@@ -4,3 +4,6 @@ OnkelBummel.xcodeproj/
 .swiftpm/
 DerivedData/
 xcuserdata/
+
+# Archives and exports for TestFlight
+build/
