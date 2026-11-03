@@ -1,0 +1,14 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+.DS_Store
+TestResults/
+
+# Database and attachments of local runs
+backend/src/OnkelBummel.Api/local-data/
+
+# Secrets for deploy/docker-compose.yml
+deploy/.env
+deploy/secrets/

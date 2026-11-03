@@ -1,0 +1,215 @@
+# Onkel Bummel – Spezifikation
+
+Onkel Bummel ist ein eigener Benachrichtigungsdienst für einen Nutzer, benannt nach Marcels erstem Postboten. Er ersetzt ntfy und bietet vor allem einen **durchsuchbaren Verlauf mit Übersicht** (Topics, Gelesen-Status, Galerie) und **gute Unterstützung für Bilder**.
+
+- **Server:** C# / .NET 10 (ASP.NET Core) in Docker im Heimnetz, im Tailnet unter `https://onkel-bummel.<tailnet>.ts.net`
+- **Clients:** native iOS-App (SwiftUI, APNs) und eine Web-Oberfläche, die vom Server ausgeliefert wird
+- **Anmeldung:** über den eigenen Identity-Server ([Marcel-B/Identity](https://github.com/Marcel-B/Identity))
+- **Monitoring:** Prometheus, Loki und Grafana im gemeinsamen Monitoring-LXC ([Marcel-B/Tonwerk-AI → `deploy/monitoring/`](https://github.com/Marcel-B/Tonwerk-AI/tree/main/deploy/monitoring))
+
+Nicht im Umfang: mehrere Nutzer, Android, MQTT, ntfy-Kompatibilität, E-Mail/SMS, Regeln/Eskalation, Critical Alerts.
+
+## Namen
+
+| Was | Name |
+|---|---|
+| Anzeigename | Onkel Bummel |
+| Repo, Hostname, Docker-Service | `onkel-bummel` |
+| Solution / Projekte | `OnkelBummel`, `OnkelBummel.Api`, `OnkelBummel.Api.Tests` |
+| Metrik-Präfix, Loki-Label `app` | `onkelbummel` |
+| iOS-Bundle-ID, URL-Schema | `de.bvelop.onkelbummel` |
+| Publish-Tokens | Präfix `ob_` |
+
+## Konzepte
+
+- **Nachricht:** gehört zu einem Topic und hat einen Text (Markdown light), optional einen Titel, eine Priorität 1–5 (Standard 3), Tags, eine Klick-URL, 0–n Anhänge (vor allem Bilder), 0–3 Actions, einen Zeitstempel und einen Gelesen-Status. Die ID ist eine fortlaufende Zahl und dient auch als Cursor beim Blättern.
+- **Topic:** einfacher Name wie `garage`, `slipways`, `filomat`, `alarme` (`[a-z0-9_-]{1,64}`). Ein Topic entsteht mit der ersten Nachricht. Einstellbar sind Anzeigename, Icon, Farbe, Stummschaltung (kein Push) und Aufbewahrung in Tagen. Nicht erlaubt sind die Namen `api`, `auth`, `static`, `health`, `metrics` und `*`.
+- **Action:** Button an einer Nachricht mit Label und HTTP-Aufruf (Methode, URL, optional Header und Body, `clear`). Den Aufruf führt der Server aus: Er steht im Heimnetz und erreicht das Ziel immer, das Handy nicht unbedingt. Das letzte Ergebnis (Status, Zeit) wird an der Nachricht gespeichert. `clear` markiert die Nachricht danach als gelesen.
+- **Gerät:** eine iOS-Installation mit APNs-Token, Umgebung (`sandbox`/`production`) und abonnierten Topics (`*` = alle).
+- **Publish-Token:** statischer Schlüssel für Sender (Skripte, Dienste, Grafana), auf Topics beschränkt oder `*`. Wird einmal angezeigt und nur als Hash gespeichert.
+
+## Senden
+
+Auth: `Authorization: Bearer ob_…`. Fehler kommen als Problem-JSON (RFC 7807): `400` ungültig, `401` ohne gültiges Token, `403` Topic nicht erlaubt, `413` zu groß, `415` falscher Inhaltstyp.
+
+### `POST /api/v1/messages` mit JSON
+
+```json
+{
+  "topic": "filomat",
+  "title": "Druck fertig",
+  "message": "Benchy ist fertig (1 h 12 min).",
+  "priority": 3,
+  "tags": ["white_check_mark", "drucker"],
+  "click": "https://fil-o-mat.<tailnet>.ts.net/jobs/42",
+  "actions": [
+    { "label": "Nächster Druck", "url": "http://fil-o-mat:8080/api/jobs/next", "method": "POST", "clear": true }
+  ],
+  "images": [
+    { "url": "http://fil-o-mat:8080/api/printers/1/thumbnail" },
+    { "data": "<base64>", "filename": "kamera.jpg" }
+  ]
+}
+```
+
+### `POST /api/v1/messages` mit `multipart/form-data`
+
+Felder `topic`, `title`, `message`, `priority`, `tags` (kommagetrennt), `click`, `actions` (JSON-String wie oben) und beliebig viele Dateien im Feld `file`:
+
+```bash
+curl -H "Authorization: Bearer ob_…" -F topic=kamera -F message="Bewegung an der Einfahrt" -F file=@snap.jpg \
+  https://onkel-bummel.<tailnet>.ts.net/api/v1/messages
+```
+
+### `POST /api/v1/webhooks/grafana?topic=alarme`
+
+Nimmt den Payload eines Grafana-Webhook-Kontaktpunkts direkt an. `firing` wird zu Priorität 4 mit Titel „Alarm: <alertname>“, `resolved` zu Priorität 2 mit „Wieder gut: <alertname>“. Text = die `summary`-Annotationen, Klick-URL = `externalURL`, Tag `grafana`.
+
+### Antwort und Wiederholungen
+
+- `201 Created` mit der gespeicherten Nachricht (`id`, `topic`, `createdAt`, `attachments`, …)
+- Mit dem Header `Idempotency-Key` gibt eine Wiederholung mit demselben Schlüssel innerhalb von 24 Stunden die ursprüngliche Antwort zurück und legt keine zweite Nachricht an.
+- Tags mit bekannten Emoji-Kurznamen (`tada`, `white_check_mark`, `warning`, `rotating_light`, …) zeigen die Clients als Emoji vor dem Titel, die übrigen als Tags.
+
+### Ablauf
+
+1. Token und Topic-Recht prüfen, Idempotency-Key prüfen
+2. Anhänge speichern (Upload, Base64 oder von einer URL geladen): Inhaltstyp prüfen, höchstens `Limits:MaxFileBytes` (Standard 20 MB) pro Datei, Bilder bekommen ein Thumbnail (längste Seite 600 px, EXIF-Rotation angewendet)
+3. In die Datenbank schreiben (die Volltextsuche aktualisiert sich über Trigger), Topic anlegen, falls es neu ist
+4. Live-Event an verbundene Clients (SSE)
+5. APNs-Push an jedes Gerät mit passendem Abo, sofern das Topic nicht stumm ist: über eine Queue mit Wiederholungen; Tokens, die Apple als ungültig meldet (`410`), werden entfernt
+
+## Lesen und Verwalten (`/api/v1`)
+
+Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Cookie der Web-Oberfläche.
+
+| Aufruf | Zweck |
+|---|---|
+| `GET messages?topics=a,b&q=&unread=1&hasImage=1&before=<id>&after=<id>&limit=50` | Verlauf, neueste zuerst; `q` ist eine Volltextsuche über Titel, Text und Tags |
+| `GET messages/{id}`, `DELETE messages/{id}` | eine Nachricht |
+| `POST messages/{id}/read`, `POST messages/read` | gelesen setzen, einzeln oder gesammelt (`{"topic": …}` oder alle) |
+| `POST messages/{id}/actions/{index}` | Action ausführen |
+| `GET topics`, `PATCH topics/{name}` | Topics mit Anzahl gesamt/ungelesen und letzter Nachricht; Einstellungen ändern |
+| `GET attachments/{id}`, `GET attachments/{id}/thumb` | Original und Thumbnail |
+| `GET stream?topics=…` | Server-Sent Events mit neuen Nachrichten und Gelesen-Änderungen |
+| `POST devices`, `PUT devices/{id}/subscriptions`, `DELETE devices/{id}` | Gerät registrieren, Abos setzen, abmelden |
+| `GET/POST/DELETE publish-tokens` | Publish-Tokens verwalten |
+| `GET config` (ohne Anmeldung) | Issuer, Client-ID der App und Audience für die Einrichtung der App |
+| `GET /health` (ohne Anmeldung) | Zustand für Docker und Blackbox-Probes |
+
+## Push (APNs)
+
+- Token-Authentifizierung mit dem .p8-Schlüssel (ES256-JWT, alle 50 Minuten erneuert), HTTP/2 direkt über `HttpClient`
+- `alert` mit Titel und Text (gekürzt, damit der Payload unter 4 KB bleibt), `thread-id` = Topic, `badge` = Anzahl ungelesen
+- `interruption-level` aus der Priorität: 1–2 `passive`, 3 `active`, 4–5 `time-sensitive`
+- Bei Bildern `mutable-content: 1` und eine **signierte, kurzlebige Thumbnail-URL** (HMAC, 15 Minuten gültig). Die Notification Service Extension lädt das Bild darüber ohne Anmeldung, und App und Extension kommen sich bei rotierenden Refresh Tokens nicht in die Quere.
+- Labels und Indizes der Actions, damit die Extension passende Buttons anlegen kann
+
+## Anmeldung
+
+Im Admin des Identity-Servers einmal anlegen (keine Codeänderung dort nötig):
+
+| Was | Werte |
+|---|---|
+| Scope `onkel-bummel-api` | Ressource/Audience `onkel-bummel-api` |
+| Rolle `onkel-bummel` | dem eigenen Benutzer zuweisen |
+| Client `onkel-bummel-web` | vertraulich, Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `https://onkel-bummel.<tailnet>.ts.net/auth/callback` (lokal zusätzlich `http://localhost:8080/auth/callback`), Post-Logout `https://onkel-bummel.<tailnet>.ts.net/`, Scope `onkel-bummel-api` |
+| Client `onkel-bummel-ios` | Public Client (PKCE), Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `de.bvelop.onkelbummel:/oauth/callback`, Scope `onkel-bummel-api` |
+
+Im Server gibt es drei Anmeldeverfahren:
+
+- **Web-Oberfläche:** Cookie + OpenID Connect (Code mit PKCE, `offline_access`). Die Tokens bleiben im Server, der Browser hat nur ein Session-Cookie. Hinter `tailscale serve` mit `UseForwardedHeaders`.
+- **iOS-App:** JWT-Bearer. Geprüft werden Issuer, Audience `onkel-bummel-api`, Ablauf, Signatur (JWKS aus der Discovery) und die Rolle `onkel-bummel` oder `admin` (`role` kann String oder Array sein). Der Benutzer wird über `sub` erkannt.
+- **Sender:** Publish-Tokens `ob_…`, eigener Authentication-Handler
+
+## Web-Oberfläche
+
+Razor Pages mit htmx und etwas Alpine.js, ohne Node-Build und ohne externe Ressourcen, hell und dunkel, auch auf dem Handy benutzbar.
+
+- Topic-Liste mit Ungelesen-Zählern, daneben die Timeline (Infinite Scroll, live per SSE)
+- Suche und Filter: Topic, Priorität, Tags, Zeitraum, nur ungelesen, nur mit Bildern
+- Galerie pro Topic mit Lightbox und Download des Originals
+- Action-Buttons mit dem letzten Ergebnis
+- Gelesen setzen (einzeln, pro Topic, alle), Löschen
+- Verwaltung: Topics, Publish-Tokens, Geräte und ihre Abos, QR-Code mit der Server-Adresse für die App
+
+## iOS-App
+
+SwiftUI ab iOS 17.
+
+- **Einrichtung:** Adresse eingeben oder QR-Code scannen → `GET /api/v1/config` → Anmeldung beim Identity-Server (AppAuth über `ASWebAuthenticationSession`) → Gerät registrieren → APNs-Token hochladen
+- **Tabs:** Inbox, Topics (mit Zählern, je Topic Timeline oder Galerie), Suche, Einstellungen (Abos, Server, Diagnose)
+- Lokaler Cache mit SwiftData, Abgleich per Cursor (`after=`), im Vordergrund live per SSE
+- Bilder mit Thumbnails in der Liste, Detailansicht mit Zoom, Teilen und Sichern
+- Notification Service Extension: hängt das Thumbnail an (nach etwa 5 Sekunden ohne Antwort nur Text) und legt eine Kategorie mit den Actions der Nachricht an
+- Aktionen in der Mitteilung: „Gelesen“, „Öffnen“ und die Actions der Nachricht. Die App führt sie im Hintergrund über die API aus.
+- Wischgesten, Badge = Anzahl ungelesen
+- Alles außer dem Push-Text braucht Tailscale, am besten auf „On Demand“
+
+## Metriken und Logs
+
+`/metrics` gibt es nur auf dem eigenen Port `Monitoring:MetricsPort` (Standard 9464). Dieser Port beantwortet nichts anderes, und die übrigen Ports beantworten `/metrics` nicht. Entscheidend ist der Port, auf dem die Verbindung ankommt. Labels haben nur wenige feste Werte, Topics, Inhalte, IDs und Benutzer kommen nicht vor.
+
+| Messwert | Bedeutung |
+|---|---|
+| `onkelbummel_messages_received_total{source, result}` | eingegangene Nachrichten; `source`: `api`, `grafana`; `result`: `stored`, `invalid`, `unauthorized`, `forbidden`, `too_large`, `duplicate` |
+| `onkelbummel_attachments_stored_total`, `onkelbummel_attachment_bytes_total` | gespeicherte Anhänge und ihre Größe |
+| `onkelbummel_push_sent_total{result}` | Pushes an APNs: `ok`, `failed`, `invalid_token` |
+| `onkelbummel_push_duration_seconds` | Dauer bis zur Antwort von APNs |
+| `onkelbummel_push_queue_length` | wartende Pushes |
+| `onkelbummel_actions_executed_total{result}` | ausgeführte Actions: `ok`, `failed` |
+| `onkelbummel_sse_connections` | offene Live-Verbindungen |
+| `onkelbummel_messages{state}` | Nachrichten in der Datenbank, `total` und `unread` (jede Minute gezählt) |
+| `onkelbummel_devices`, `onkelbummel_publish_tokens` | registrierte Geräte und Publish-Tokens |
+| `onkelbummel_database_size_bytes`, `onkelbummel_attachments_size_bytes` | Größe der Datenbank (mit WAL) und der Anhänge |
+| `onkelbummel_job_runs_total{task, result}`, `onkelbummel_job_duration_seconds{task}`, `onkelbummel_job_last_success_timestamp_seconds{task}` | Hintergrund-Jobs `retention`, `cleanup`, `backup` |
+| `onkelbummel_backup_last_success_timestamp_seconds` | letzte erfolgreiche Sicherung (Alarm „Sicherung zu alt“) |
+| `onkelbummel_loki_lines_pushed_total`, `onkelbummel_loki_lines_dropped_total{reason}` | Logzeilen an Loki bzw. verworfen (`queue_full`, `push_failed`) |
+| `http_requests_received_total`, `http_request_duration_seconds` | Anfragen nach Route-Vorlage, Methode und Status |
+| `process_*`, `dotnet_*` | Prozess und Laufzeit |
+
+Mit `Monitoring:Loki:Url` gehen die Logzeilen zusätzlich an Loki, mit den Labels `app=onkelbummel`, `host` (`Monitoring:Loki:Host`), `level` und `source` (`api`, `http`, `http-client`, `db`, `push`, `actions`, `auth`, `jobs`). Sie werden alle 2 Sekunden gebündelt verschickt. Ist Loki nicht erreichbar, werden sie verworfen, statt zu warten.
+
+## Hintergrund-Jobs
+
+- `retention` (täglich): löscht Nachrichten, die älter sind als die Aufbewahrung ihres Topics
+- `cleanup` (täglich): löscht Anhang-Dateien ohne Nachricht
+- `backup` (nächtlich, `Backup:At`): SQLite-Online-Backup plus Anhänge als ZIP per WebDAV in die Nextcloud, optional mit AES-256 verschlüsselt. Ohne Nextcloud-Zugang aus.
+
+## Datenmodell (SQLite)
+
+| Tabelle | Spalten |
+|---|---|
+| `Topics` | `Name` (PK), `DisplayName`, `Icon`, `Color`, `Muted`, `RetentionDays` |
+| `Messages` | `Id` (fortlaufend), `Topic`, `Title`, `Body`, `Priority`, `Tags` (JSON), `ClickUrl`, `Source`, `IdempotencyKey`, `CreatedAt`, `ReadAt` |
+| `MessagesFts` | FTS5 über `Title`, `Body`, `Tags`, als External-Content-Tabelle von `Messages` mit Triggern |
+| `Attachments` | `Id`, `MessageId`, `FileName`, `ContentType`, `Size`, `Sha256`, `Width`, `Height`, `Path`, `ThumbnailPath` |
+| `MessageActions` | `MessageId` + `Index` (PK), `Label`, `Method`, `Url`, `Headers` (JSON), `Body`, `Clear`, `LastStatus`, `LastRunAt` |
+| `Devices` | `Id`, `OwnerSub`, `Name`, `ApnsToken`, `Environment`, `CreatedAt`, `LastSeenAt` |
+| `Subscriptions` | `DeviceId` + `Topic` (PK) |
+| `PublishTokens` | `Id`, `Name`, `Hash`, `Topics` (JSON), `CreatedAt`, `LastUsedAt` |
+
+## Konfiguration
+
+Alles in `appsettings.json`, überschreibbar per Umgebungsvariable (`Abschnitt__Schlüssel`).
+
+| Abschnitt | Schlüssel |
+|---|---|
+| `Server` | `PublicUrl`, `UseForwardedHeaders` |
+| `Storage` | `DataPath` (Datenbank und Anhänge, im Container `/data`) |
+| `Limits` | `MaxFileBytes` |
+| `Oidc` | `Issuer`, `Audience`, `WebClientId`, `WebClientSecret`, `IosClientId`, `RequiredRole` |
+| `Apns` | `KeyPath`, `KeyId`, `TeamId`, `BundleId` |
+| `Monitoring` | `MetricsPort`, `InventoryInterval`, `Loki:Url`, `Loki:Host` |
+| `Backup` | `NextcloudWebDavUrl`, `NextcloudUserName`, `NextcloudAppPassword`, `Passphrase`, `At` |
+
+## Betrieb
+
+`deploy/docker-compose.yml` startet den Server zusammen mit einem Tailscale-Container, dessen Netzwerk er teilt. `tailscale serve` stellt die App unter `https://onkel-bummel.<tailnet>.ts.net` und die Metriken unter Port 9464 bereit, beide mit gültigem Zertifikat. Ausgehend erreicht der Server über Tailscale den Identity-Server, Loki und die Ziele von Actions.
+
+## Umstellung der bisherigen ntfy-Sender
+
+1. **Slipways:** `NtfyClient` wird durch einen Client für `POST /api/v1/messages` ersetzt (JSON, Bearer-Token, `Idempotency-Key`). Der eigene ntfy-Container (`deploy/compose.ntfy.yaml`, `deploy/lxc/setup-ntfy.sh`) entfällt.
+2. **fil-o-mat:** `Notifier` schickt multipart mit Thumbnail und Actions als JSON. Die Einstellungen in den Apps werden zu „Server-Adresse + Topic + Token“.
+3. **Grafana-Alarme** (Tonwerk-AI, `deploy/monitoring`): Der Kontaktpunkt geht an `/api/v1/webhooks/grafana?topic=alarme` mit Bearer-Token.
+4. Erst danach wird der ntfy-Container auf slipways-1 abgeschaltet, an dem heute auch die Grafana-Alarme hängen.
