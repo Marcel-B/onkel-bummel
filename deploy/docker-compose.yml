@@ -1,66 +1,26 @@
-# Onkel Bummel im Heimnetz, erreichbar nur im Tailnet:
-#   https://onkel-bummel.<tailnet>.ts.net        App, API und Web-Oberfläche
-#   https://onkel-bummel.<tailnet>.ts.net:9464   nur /metrics für Prometheus
+# Onkel Bummel im LXC, eingerichtet von deploy/proxmox/create-lxc.sh. Tailscale läuft im LXC selbst,
+# "tailscale serve" reicht die Anfragen an den Server weiter:
+#   https://onkel-bummel.<tailnet>.ts.net        → 127.0.0.1:8080  App, API und Web-Oberfläche
+#   https://onkel-bummel.<tailnet>.ts.net:9464   → 127.0.0.1:9464  nur /metrics für Prometheus
 #
-#   cp .env.example .env    # Werte eintragen
-#   mkdir -p secrets && cp ~/Downloads/AuthKey_XXXXXXXXXX.p8 secrets/apns.p8
-#   docker compose up -d --build
-#
-# Der Server teilt das Netzwerk des Tailscale-Containers: tailscale serve reicht die Anfragen an 127.0.0.1 weiter,
-# und ausgehend erreicht der Server den Identity-Server, Loki und die Ziele von Actions über das Tailnet.
+# Host-Netzwerk, damit der Server ausgehend das Tailnet samt MagicDNS nutzt (Identity-Server, Loki, Ziele
+# von Actions). Er lauscht nur auf 127.0.0.1, aus dem LAN ist er also nicht erreichbar.
+# Einstellungen stehen in /etc/onkel-bummel/onkel-bummel.env, nach Änderungen: docker compose up -d
 name: onkel-bummel
 
 services:
-  tailscale:
-    image: tailscale/tailscale:stable
-    hostname: onkel-bummel
-    restart: unless-stopped
-    environment:
-      TS_AUTHKEY: ${TS_AUTHKEY:-}
-      TS_HOSTNAME: onkel-bummel
-      TS_STATE_DIR: /var/lib/tailscale
-      TS_SERVE_CONFIG: /config/serve.json
-      # Kernel-Modus statt Userspace, damit auch die Verbindungen des Servers ins Tailnet gehen
-      TS_USERSPACE: "false"
-      TS_ACCEPT_DNS: "true"
-    volumes:
-      - tailscale-state:/var/lib/tailscale
-      - ./tailscale/serve.json:/config/serve.json:ro
-    devices:
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - net_admin
-    ports:
-      # Für den Zugriff aus dem Heimnetz ohne Tailscale, z. B. zum Testen; ohne Zeile nur im Tailnet
-      - "127.0.0.1:${ONKEL_BUMMEL_LOCAL_PORT:-8080}:8080"
-
   onkel-bummel:
     build: ../backend
     image: onkel-bummel:latest
     restart: unless-stopped
-    network_mode: service:tailscale
-    depends_on:
-      - tailscale
+    network_mode: host
+    env_file: ${ONKEL_BUMMEL_ENV_FILE:-/etc/onkel-bummel/onkel-bummel.env}
     environment:
-      Server__PublicUrl: https://onkel-bummel.${TS_TAILNET:?TS_TAILNET fehlt in der .env}.ts.net
+      ASPNETCORE_URLS: http://127.0.0.1:8080;http://127.0.0.1:9464
       Server__UseForwardedHeaders: "true"
-      Oidc__Issuer: ${OIDC_ISSUER:?OIDC_ISSUER fehlt in der .env}
-      Oidc__WebClientSecret: ${OIDC_WEB_CLIENT_SECRET:-}
-      Apns__KeyPath: /run/secrets/apns.p8
-      Apns__KeyId: ${APNS_KEY_ID:-}
-      Apns__TeamId: ${APNS_TEAM_ID:-}
-      Monitoring__Loki__Url: ${LOKI_URL:-}
-      Monitoring__Loki__Host: ${MONITORING_HOST:-onkel-bummel}
-      Backup__NextcloudWebDavUrl: ${NEXTCLOUD_WEBDAV_URL:-}
-      Backup__NextcloudUserName: ${NEXTCLOUD_USERNAME:-}
-      Backup__NextcloudAppPassword: ${NEXTCLOUD_APP_PASSWORD:-}
-      Backup__Passphrase: ${BACKUP_PASSPHRASE:-}
       TZ: Europe/Berlin
     volumes:
-      - data:/data
-      # Ganzer Ordner statt einzelner Datei: fehlt apns.p8, legt Docker sonst ein Verzeichnis dieses Namens an
-      - ./secrets:/run/secrets:ro
-
-volumes:
-  tailscale-state:
-  data:
+      # Datenbank und Anhänge; gehört dem Benutzer "app" (UID 1654) im Image
+      - ${ONKEL_BUMMEL_DATA:-/var/lib/onkel-bummel}:/data
+      # APNs-Schlüssel (apns.p8)
+      - ${ONKEL_BUMMEL_SECRETS:-/etc/onkel-bummel/secrets}:/run/secrets:ro

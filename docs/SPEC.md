@@ -205,7 +205,9 @@ Alles in `appsettings.json`, überschreibbar per Umgebungsvariable (`Abschnitt__
 
 ## Betrieb
 
-`deploy/docker-compose.yml` startet den Server zusammen mit einem Tailscale-Container, dessen Netzwerk er teilt. `tailscale serve` stellt die App unter `https://onkel-bummel.<tailnet>.ts.net` und die Metriken unter Port 9464 bereit, beide mit gültigem Zertifikat. Ausgehend erreicht der Server über Tailscale den Identity-Server, Loki und die Ziele von Actions.
+Der Server läuft in einem unprivilegierten LXC auf Proxmox, den `deploy/proxmox/create-lxc.sh` anlegt. Tailscale läuft im LXC selbst, der Server als Docker-Container im Host-Netz des LXC (`deploy/docker-compose.yml`) und lauscht nur auf `127.0.0.1`. `tailscale serve` stellt die App unter `https://onkel-bummel.<tailnet>.ts.net` und die Metriken unter Port 9464 bereit, beide mit gültigem Zertifikat. Ausgehend erreicht der Server über Tailscale und MagicDNS den Identity-Server, Loki und die Ziele von Actions.
+
+Neue Commits auf `main` spielt ein systemd-Timer im LXC selbst ein (`deploy/proxmox/update.sh`): erst die Tests im Docker-Build, dann das Image, dann der Neustart. Kommt die neue Version nicht gesund hoch, laufen wieder das vorige Image und die Datenbank von vor dem Update. Einzelheiten in [deploy/proxmox/README.md](../deploy/proxmox/README.md).
 
 ## Umstellung der bisherigen ntfy-Sender
 

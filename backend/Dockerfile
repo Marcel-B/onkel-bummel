@@ -8,6 +8,12 @@ RUN dotnet restore src/OnkelBummel.Api/OnkelBummel.Api.csproj
 COPY src/ src/
 RUN dotnet publish src/OnkelBummel.Api/OnkelBummel.Api.csproj -c Release -o /app --no-restore
 
+# Only built on request (docker build --target test); the update in the LXC deploys a commit only when this passes.
+FROM build AS test
+COPY OnkelBummel.slnx ./
+COPY tests/ tests/
+RUN dotnet test
+
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app .

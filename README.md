@@ -29,14 +29,14 @@ dotnet test
 
 ## Betrieb
 
-`deploy/docker-compose.yml` startet den Server zusammen mit einem Tailscale-Container. Erreichbar ist er danach nur im Tailnet unter `https://onkel-bummel.<tailnet>.ts.net`, die Metriken unter Port 9464.
+Onkel Bummel läuft in einem LXC auf Proxmox, erreichbar nur im Tailnet unter `https://onkel-bummel.<tailnet>.ts.net`, die Metriken unter Port 9464. Neue Commits auf `main` spielt der LXC selbst ein, nach bestandenen Tests und mit Rücknahme, wenn die neue Version nicht hochkommt.
 
 ```bash
-cd deploy
-cp .env.example .env              # Werte eintragen
-mkdir -p secrets && cp ~/Downloads/AuthKey_XXXXXXXXXX.p8 secrets/apns.p8
-docker compose up -d --build
+# in der Proxmox-Shell als root
+TS_AUTHKEY=tskey-auth-... bash create-lxc.sh
 ```
+
+Einstellungen, Updates und Pfade: [deploy/proxmox/README.md](deploy/proxmox/README.md).
 
 ## Monitoring
 
