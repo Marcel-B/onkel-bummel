@@ -54,10 +54,19 @@ main() {
     short="${commit:0:7}"
     echo "Spiele $short ein: $(git -C "$SRC_DIR" log -1 --format=%s)"
 
+    # Der Build-Cache wächst mit jedem Update um 2 bis 4 GB; wird es eng, lieber einmal alles neu laden als mitten im Build abbrechen
+    if (($(df --output=avail -k / | tail -n 1) < 6 * 1024 * 1024)); then
+        echo "Weniger als 6 GB frei, Build-Cache leeren"
+        docker builder prune -af >/dev/null || true
+    fi
+
     echo "Tests"
-    if ! docker build --quiet --target test "$SRC_DIR/backend" >/dev/null; then
-        # Ohne --quiet nochmal, damit die fehlgeschlagenen Tests im Log stehen; die Stages kommen aus dem Cache
-        docker build --progress=plain --target test "$SRC_DIR/backend" 2>&1 | tail -n 60 || true
+    # cacheonly: das Ergebnis der Tests zählt, ein Image der Stage (gut 2 GB mit allen NuGet-Paketen) braucht es nicht
+    if ! docker build --quiet --target test --output type=cacheonly "$SRC_DIR/backend" >/dev/null; then
+        # Ohne --quiet nochmal, damit die fehlgeschlagenen Tests samt Meldung im Log stehen; die Stages kommen aus dem Cache
+        output="$(docker build --progress=plain --target test --output type=cacheonly "$SRC_DIR/backend" 2>&1 || true)"
+        grep -E -A8 '^#[0-9]+ [0-9.]+ failed [[:alpha:]]' <<<"$output" | head -n 80 || true
+        tail -n 12 <<<"$output"
         give_up "Tests von $short schlagen fehl, die bisherige Version läuft weiter."
     fi
 

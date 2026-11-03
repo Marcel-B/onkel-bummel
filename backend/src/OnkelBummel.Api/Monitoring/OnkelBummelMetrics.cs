@@ -72,7 +72,10 @@ public static class OnkelBummelMetrics
 
     // Its own series because the shared alert "backup too old" looks for <app>_backup_last_success_timestamp_seconds.
     // Absent until the first backup, so a server without Nextcloud access is not alarmed.
-    public static readonly Gauge BackupLastSuccess = Metrics.CreateGauge(
+    public static readonly Gauge BackupLastSuccess = CreateBackupLastSuccess(Metrics.DefaultFactory);
+
+    // Separate so a test can check the configuration in a registry of its own, apart from the backups other tests run.
+    internal static Gauge CreateBackupLastSuccess(IMetricFactory factory) => factory.CreateGauge(
         "onkelbummel_backup_last_success_timestamp_seconds", "Unix time of the last successful backup.",
         new GaugeConfiguration { SuppressInitialValue = true });
 

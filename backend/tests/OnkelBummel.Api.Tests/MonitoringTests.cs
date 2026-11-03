@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Logging;
@@ -7,6 +8,7 @@ using Microsoft.Extensions.Options;
 using OnkelBummel.Api.Data;
 using OnkelBummel.Api.Monitoring;
 using OnkelBummel.Api.Options;
+using Prometheus;
 
 namespace OnkelBummel.Api.Tests;
 
@@ -45,9 +47,29 @@ public sealed class MetricsEndpointTests : IAsyncLifetime
         Assert.Matches("""(?m)^onkelbummel_job_runs_total\{task="backup",result="failure"\} \d""", metrics);
         Assert.Matches("""(?m)^onkelbummel_loki_lines_dropped_total\{reason="push_failed"\} \d""", metrics);
         Assert.Contains("process_resident_memory_bytes", metrics);
-        // Missing until the first backup, so a server without Nextcloud access does not trip the backup alert.
-        Assert.DoesNotMatch("(?m)^onkelbummel_backup_last_success_timestamp_seconds ", metrics);
+        // Only registered here: the backup tests running at the same time may already have set a value.
+        Assert.Contains("# TYPE onkelbummel_backup_last_success_timestamp_seconds gauge", metrics);
         Assert.Equal(HttpStatusCode.NotFound, health.StatusCode);
+    }
+
+    [Fact]
+    public async Task The_backup_timestamp_is_missing_until_the_first_backup()
+    {
+        // Missing until the first backup, so a server without Nextcloud access does not trip the backup alert.
+        var registry = Metrics.NewCustomRegistry();
+        var gauge = OnkelBummelMetrics.CreateBackupLastSuccess(Metrics.WithCustomRegistry(registry));
+        const string sample = "(?m)^onkelbummel_backup_last_success_timestamp_seconds ";
+
+        Assert.DoesNotMatch(sample, await ExportAsync(registry));
+        gauge.SetToCurrentTimeUtc();
+        Assert.Matches(sample, await ExportAsync(registry));
+    }
+
+    private static async Task<string> ExportAsync(CollectorRegistry registry)
+    {
+        using var stream = new MemoryStream();
+        await registry.CollectAndExportAsTextAsync(stream, TestContext.Current.CancellationToken);
+        return Encoding.UTF8.GetString(stream.ToArray());
     }
 }
 
