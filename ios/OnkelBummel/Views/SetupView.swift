@@ -27,6 +27,7 @@ struct SetupView: View {
                     signIn(setup)
                 } else {
                     server
+                    demo
                 }
 
                 if let error {
@@ -35,6 +36,11 @@ struct SetupView: View {
                     } footer: {
                         Text("Server und Anmeldung sind nur im Tailnet erreichbar: Tailscale muss an sein.")
                     }
+                }
+
+                Section {
+                    Link("Datenschutz", destination: WebPages.privacy)
+                    Link("Impressum", destination: WebPages.imprint)
                 }
             }
             .disabled(busy)
@@ -73,6 +79,16 @@ struct SetupView: View {
             Text("Server")
         } footer: {
             Text("Die Adresse steht in der Web-Oberfläche unter Verwaltung, dort auch als QR-Code.")
+        }
+    }
+
+    private var demo: some View {
+        Section {
+            Button("Ohne Server ausprobieren", systemImage: "play.circle") {
+                Task { await app.startDemo() }
+            }
+        } footer: {
+            Text("Zeigt die App mit Beispielnachrichten. Die Demo läuft nur auf diesem Gerät, nichts wird gesendet.")
         }
     }
 

@@ -31,6 +31,13 @@ Onkel Bummel zieht seit PR #8 fertige Images. Dasselbe ginge bei den anderen, je
 - **Identity (CT 112):** baut mit `dotnet publish` direkt im LXC (`identity-update`, ohne Docker, etwa 1,5 GiB RAM beim Build). Dort eher ein fertiges `publish`-Archiv aus GitHub Actions oder gleich der Docker-Weg (siehe Ausfallsicherheit).
 - **fil-o-mat (CT 111)** und **Slipways (slipways-1)**: haben eigene Updater, die auf dem Host bauen. Muster: Workflow wie `server-image.yml` und Pull-Modus wie in `deploy/proxmox/update.sh`.
 
+## App Store (Entscheidung vom 04.11.2026: nur für mich, mit Demo)
+
+1. **Datenschutzseite** auf marcelbenders.com (com #29) mergen; erst dann führen die Links in der App ins Ziel.
+2. **Store-Eintrag** in App Store Connect: Datenschutz-URL `https://marcelbenders.com/datenschutz-onkel-bummel.html`, Support-URL die Projektseite, Privacy Labels „Keine Daten erfasst“, EU-Händlerstatus (nicht gewerblich), Altersfreigabe, Screenshots aus der Demo, Kategorie.
+3. **Review-Notizen:** Die App ist der Client für einen selbst gehosteten Server; zum Prüfen „Ohne Server ausprobieren“ und in den Einstellungen „Beispielnachricht senden“. Dazu ein kurzes Video vom echten Betrieb mit Push.
+4. **Verteilung wählen:** öffentlich oder „Unlisted“ (nur über den Link auffindbar).
+
 ## Funktionen
 
 1. **Kurzbefehle und Widget (Meilenstein 8 des ursprünglichen Plans, noch nicht in der [Spezifikation](SPEC.md)).** App Intents für Kurzbefehle, z. B. „Nachricht senden“ und „Ungelesene zeigen“, und ein Widget „Ungelesen“.

@@ -125,3 +125,92 @@ import Testing
         #expect(Emoji.plainTags(["tada", "drucker"]) == ["drucker"])
     }
 }
+
+@Suite struct DemoServerTests {
+    private func get<T: Decodable>(_ server: DemoServer, _ path: String, method: String = "GET", body: String? = nil) throws -> T {
+        let answer = try send(server, path, method: method, body: body)
+        #expect(answer.status == 200)
+        return try JSON.decoder.decode(T.self, from: answer.body)
+    }
+
+    private func send(_ server: DemoServer, _ path: String, method: String = "GET", body: String? = nil) throws -> DemoServer.Answer {
+        var request = URLRequest(url: try #require(URL(string: path, relativeTo: DemoServer.baseURL)?.absoluteURL))
+        request.httpMethod = method
+        request.httpBody = body.map { Data($0.utf8) }
+        return server.answer(request)
+    }
+
+    @Test func pagesLikeTheServer() throws {
+        let server = DemoServer()
+        let newest: MessagePage = try get(server, "/api/v1/messages?limit=3")
+        #expect(newest.messages.count == 3)
+        #expect(newest.hasMore)
+        #expect(newest.messages.map(\.id) == newest.messages.map(\.id).sorted(by: >))
+
+        let older: MessagePage = try get(server, "/api/v1/messages?before=\(newest.messages[2].id)&limit=200")
+        #expect(older.messages.allSatisfy { $0.id < newest.messages[2].id })
+        #expect(!older.hasMore)
+
+        let after: MessagePage = try get(server, "/api/v1/messages?after=\(newest.messages[2].id)&limit=200")
+        #expect(after.messages.map(\.id) == newest.messages.prefix(2).map(\.id).reversed())
+    }
+
+    @Test func filtersAndSearches() throws {
+        let server = DemoServer()
+        let printer: MessagePage = try get(server, "/api/v1/messages?topics=drucker&limit=50")
+        #expect(!printer.messages.isEmpty)
+        #expect(printer.messages.allSatisfy { $0.topic == "drucker" })
+
+        let images: MessagePage = try get(server, "/api/v1/messages?has_image=1&limit=50")
+        #expect(images.messages.allSatisfy { $0.attachments.contains(where: \.isImage) })
+
+        let found: MessagePage = try get(server, "/api/v1/messages?q=filament%20spule&limit=50")
+        #expect(found.messages.map(\.title) == ["Filament fast leer"])
+    }
+
+    @Test func readStateReachesTheTopics() throws {
+        let server = DemoServer()
+        var topics: [Topic] = try get(server, "/api/v1/topics")
+        let unread = try #require(topics.first { $0.name == "garage" }).unread
+        #expect(unread > 0)
+
+        let result: MarkReadResult = try get(server, "/api/v1/messages/read", method: "POST", body: #"{"topic":"garage"}"#)
+        #expect(result.count == unread)
+        topics = try get(server, "/api/v1/topics")
+        #expect(topics.first { $0.name == "garage" }?.unread == 0)
+        #expect(try #require(topics.first { $0.name == "drucker" }).unread > 0)
+    }
+
+    @Test func actionsAnswerAndMarkRead() throws {
+        let server = DemoServer()
+        let page: MessagePage = try get(server, "/api/v1/messages?limit=50")
+        let message = try #require(page.messages.first { !$0.actions.isEmpty && $0.readAt == nil })
+        let result: ActionRunResult = try get(server, "/api/v1/messages/\(message.id)/actions/0", method: "POST")
+        #expect(result.ok)
+        #expect(result.markedRead)
+        let after: Message = try get(server, "/api/v1/messages/\(message.id)")
+        #expect(after.readAt != nil)
+        #expect(after.actions.first?.lastStatus == 200)
+    }
+
+    @Test func samplesArriveAsNewestUnreadMessage() throws {
+        let server = DemoServer()
+        let sample = server.sendSample()
+        let page: MessagePage = try get(server, "/api/v1/messages?limit=1")
+        #expect(page.messages.first?.id == sample.id)
+        #expect(page.messages.first?.readAt == nil)
+        #expect(try send(server, "/api/v1/messages/\(sample.id)", method: "DELETE").status == 204)
+        #expect(try send(server, "/api/v1/messages/\(sample.id)").status == 404)
+    }
+
+    @Test func answersThroughURLSession() async throws {
+        DemoServer.shared.reset()
+        let api = APIClient.demo
+        let topics = try await api.topics()
+        #expect(topics.count == 5)
+        let device = try await api.register(RegisterDevice(id: nil, name: "iPhone", apnsToken: "x", environment: "sandbox"))
+        #expect(device.topics == [Topics.all])
+        let changed = try await api.setSubscriptions(deviceId: device.id, topics: ["garage"])
+        #expect(changed.topics == ["garage"])
+    }
+}

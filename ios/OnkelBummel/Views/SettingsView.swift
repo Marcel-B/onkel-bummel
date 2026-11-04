@@ -16,12 +16,24 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                pushSection
-                subscriptionsSection
+                if app.isDemo {
+                    demoSection
+                } else {
+                    pushSection
+                    subscriptionsSection
+                }
                 serverSection
                 diagnosticsSection
                 Section {
-                    Button("Abmelden", role: .destructive) { confirmSignOut = true }
+                    Link("Datenschutz", destination: WebPages.privacy)
+                    Link("Impressum", destination: WebPages.imprint)
+                }
+                Section {
+                    if app.isDemo {
+                        Button("Demo beenden", role: .destructive) { Task { await app.signOut() } }
+                    } else {
+                        Button("Abmelden", role: .destructive) { confirmSignOut = true }
+                    }
                 }
             }
             .navigationTitle("Einstellungen")
@@ -66,6 +78,18 @@ struct SettingsView: View {
         }
     }
 
+    private var demoSection: some View {
+        Section {
+            Button("Beispielnachricht senden", systemImage: "bell.badge") {
+                Task { await app.sendDemoMessage() }
+            }
+        } header: {
+            Text("Demo")
+        } footer: {
+            Text("Die Mitteilung kommt nach 5 Sekunden, auch wenn du die App vorher verlässt. Mit einem eigenen Server kommen Mitteilungen von deinen Diensten, mit Bild und Knöpfen.")
+        }
+    }
+
     private var subscriptionsSection: some View {
         Section {
             let subscribed = Set(app.device?.topics ?? [Topics.all])
@@ -96,7 +120,9 @@ struct SettingsView: View {
 
     private var serverSection: some View {
         Section("Server") {
-            if let setup = app.setup {
+            if app.isDemo {
+                LabeledContent("Adresse", value: "Demo auf diesem Gerät")
+            } else if let setup = app.setup {
                 LabeledContent("Adresse", value: setup.serverURL.host() ?? setup.serverURL.absoluteString)
                 LabeledContent("Anmeldung", value: setup.discovery.issuer.host() ?? "")
             }
@@ -129,4 +155,10 @@ struct SettingsView: View {
             }
         }
     }
+}
+
+/// Pages about the app on marcelbenders.com.
+enum WebPages {
+    static let privacy = URL(string: "https://marcelbenders.com/datenschutz-onkel-bummel.html")!
+    static let imprint = URL(string: "https://marcelbenders.com/impressum.html")!
 }

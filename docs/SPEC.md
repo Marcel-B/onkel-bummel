@@ -157,6 +157,8 @@ SwiftUI ab iOS 17, in `ios/` (Xcode-Projekt aus `project.yml` mit XcodeGen, Logi
 - Aktionen in der Mitteilung: „Gelesen“, „Öffnen“ und die Actions der Nachricht. Die App führt sie im Hintergrund über die API aus.
 - Wischgesten (gelesen, löschen; bei Topics gelesen, stumm), Badge = Anzahl ungelesen
 - Alles außer dem Push-Text braucht Tailscale, am besten auf „On Demand“
+- **Demo ohne Server** (für das App Review und zum Ausprobieren): „Ohne Server ausprobieren“ bei der Einrichtung. `DemoServer` in `OnkelBummelKit` beantwortet dieselbe API mit Beispieldaten im Speicher, über ein `URLProtocol` unter `https://demo.onkel-bummel.invalid/`; nichts geht ins Netz, keine Anmeldung, kein Gerät, kein SSE. Bilder zeichnet die App selbst („Beispielbild“). In den Einstellungen schickt „Beispielnachricht senden“ eine neue Nachricht und nach 5 Sekunden eine lokale Mitteilung dazu. Die Demo bleibt nach einem Neustart an und beginnt dann wieder mit den Beispieldaten; „Demo beenden“ führt zurück zur Einrichtung.
+- Datenschutz und Impressum auf marcelbenders.com sind bei der Einrichtung und in den Einstellungen verlinkt. `PrivacyInfo.xcprivacy` in App und Extension: kein Tracking, keine erfassten Daten, `UserDefaults` mit den Gründen `CA92.1` (App) und `1C8F.1` (App Group).
 
 Apple-Konto: Team `6GGU8ET2C4`, App `com.b-velop.onkel-bummel` (Push, App Groups, Time Sensitive Notifications), Extension `com.b-velop.onkel-bummel.NotificationService` (App Groups), App Group `group.com.b-velop.onkel-bummel`.
 

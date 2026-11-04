@@ -1,0 +1,40 @@
+name: iOS prüfen
+
+# Baut die App und testet OnkelBummelKit bei jedem Pull Request, der ios/ ändert; hochgeladen wird nichts.
+on:
+  pull_request:
+    paths: [ios/**, .github/workflows/ios-check.yml]
+
+concurrency:
+  group: ios-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test OnkelBummelKit
+        working-directory: ios/OnkelBummelKit
+        run: swift test
+      - name: Generate Xcode project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Build for the simulator
+        run: |
+          xcodebuild build \
+            -project OnkelBummel.xcodeproj \
+            -scheme OnkelBummel \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/derived" \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Privacy manifests in the bundle
+        run: |
+          app="$RUNNER_TEMP/derived/Build/Products/Debug-iphonesimulator/OnkelBummel.app"
+          test -f "$app/PrivacyInfo.xcprivacy"
+          test -f "$app/PlugIns/NotificationService.appex/PrivacyInfo.xcprivacy"

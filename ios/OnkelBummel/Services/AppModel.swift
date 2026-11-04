@@ -26,6 +26,8 @@ final class AppModel {
     private(set) var api: APIClient?
     private(set) var device: Device?
     private(set) var userName: String?
+    /// The demo mode: sample data from `DemoServer`, no server, no sign-in, no pushes from outside.
+    private(set) var isDemo = false
     var selectedTab = Tab.inbox
     /// Set when a push was tapped; the inbox opens that message.
     var openMessageId: Int64?
@@ -37,6 +39,7 @@ final class AppModel {
     private static let setupKey = "serverSetup"
     private static let deviceIdKey = "deviceId"
     private static let deviceTokenKey = "apnsToken"
+    private static let demoKey = "demo"
 
     private var deviceToken: String? {
         get { UserDefaults.standard.string(forKey: Self.deviceTokenKey) }
@@ -59,7 +62,11 @@ final class AppModel {
         sync = SyncService(context: container.mainContext) { AppModel.shared.api }
         phase = setup == nil ? .setup : .signedOut
 
-        if setup != nil { Task { await self.restore() } }
+        if setup != nil {
+            Task { await self.restore() }
+        } else if UserDefaults.standard.bool(forKey: Self.demoKey) {
+            Task { await self.startDemo() }
+        }
     }
 
     private func restore() async {
@@ -107,6 +114,7 @@ final class AppModel {
 
     /// Signs the device off at the server and forgets tokens and cache; the server address stays.
     func signOut() async {
+        if isDemo { return endDemo() }
         if let id = device?.id ?? UserDefaults.standard.string(forKey: Self.deviceIdKey) {
             try? await api?.deleteDevice(id)
         }
@@ -127,6 +135,50 @@ final class AppModel {
         phase = .setup
     }
 
+    // MARK: Demo
+
+    /// Shows the app with sample data, without a server; starts afresh every time.
+    func startDemo() async {
+        DemoServer.shared.reset()
+        DemoServer.shared.setImages { DemoImages.jpeg($0) }
+        UserDefaults.standard.set(true, forKey: Self.demoKey)
+        sync.clear()
+        isDemo = true
+        api = .demo
+        userName = "Demo"
+        phase = .ready
+        await sync.refresh()
+    }
+
+    /// Back to entering a server address; the sample data goes with it.
+    func endDemo() {
+        sync.clear()
+        UserDefaults.standard.removeObject(forKey: Self.demoKey)
+        isDemo = false
+        api = nil
+        userName = nil
+        phase = .setup
+    }
+
+    /// A sample message, and a few seconds later the notification for it, so it also shows on the lock screen.
+    func sendDemoMessage() async {
+        guard isDemo else { return }
+        await PushService.requestAuthorization()
+        let message = DemoServer.shared.sendSample()
+        let content = UNMutableNotificationContent()
+        content.title = Emoji.title(message.title, tags: message.tags, fallback: message.topic)
+        content.body = message.message
+        content.sound = .default
+        content.categoryIdentifier = NotificationIdentifiers.messageCategory
+        content.interruptionLevel = message.priority >= 4 ? .timeSensitive : message.priority <= 2 ? .passive : .active
+        content.userInfo = ["ob": ["id": NSNumber(value: message.id), "topic": message.topic] as [String: Any]]
+        let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 5, repeats: false)
+        try? await UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "demo-\(message.id)", content: content, trigger: trigger))
+        try? await Task.sleep(for: .seconds(5))
+        await sync.refresh()
+    }
+
     private nonisolated static func oauthClient(for setup: ServerSetup) -> OAuthClient {
         OAuthClient(discovery: setup.discovery, clientId: setup.config.clientId, redirectURI: AuthService.redirectURI,
                     scopes: setup.config.scopes)
@@ -141,7 +193,7 @@ final class AppModel {
 
     /// Tells the server the APNs token; also when it is unchanged, so the server sees the device is alive.
     func registerDevice() async {
-        guard phase == .ready, let api, let deviceToken else { return }
+        guard phase == .ready, !isDemo, let api, let deviceToken else { return }
         do {
             let device = try await api.register(RegisterDevice(
                 id: UserDefaults.standard.string(forKey: Self.deviceIdKey),
@@ -172,7 +224,7 @@ final class AppModel {
     // MARK: Foreground
 
     func didBecomeActive() async {
-        guard phase == .ready else { return }
+        guard phase == .ready, !isDemo else { return }
         sync.startLive()
         await registerDevice()
     }
