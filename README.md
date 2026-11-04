@@ -7,7 +7,7 @@ Eigener Benachrichtigungsdienst mit Verlauf, Suche und Bildern, benannt nach mei
 | Server (C# / .NET 10) | Senden (JSON, multipart, Grafana-Webhook) mit Bildern und Thumbnails, Publish-Tokens, Verlauf mit Suche, Live-Stream (SSE), Actions, Anmeldung per JWT, Aufbewahrung, Aufräumen, Sicherung in die Nextcloud, Metriken und Loki |
 | Push (APNs), Geräte | Push an abonnierte Geräte mit Retry, Bild über signierten Link, Actions als Buttons, Badge |
 | Web-Oberfläche (Vue 3) | Anmeldung über den Identity-Server, Timeline live, Suche und Filter, Galerie, Actions, Gelesen und Löschen, Verwaltung von Topics, Tokens und Geräten, QR-Code für die App |
-| iOS-App | Einrichtung mit Login, Inbox, Topics mit Galerie, Suche, Abos, Cache und Live-Updates, Notification Service Extension |
+| iOS-App | Einrichtung mit Login, Inbox, Topics mit Galerie, Suche, Abos, Cache und Live-Updates, Notification Service Extension, Demo ohne Server, Privacy Manifest |
 
 ## Lokal starten
 
@@ -69,7 +69,7 @@ xcodegen
 open OnkelBummel.xcodeproj
 ```
 
-Signiert wird automatisch mit dem Team `6GGU8ET2C4`. Die App braucht im Identity-Server den Public Client `onkel-bummel-ios` mit der Redirect-URI `com.b-velop.onkel-bummel:/oauth/callback` (siehe [Spezifikation](docs/SPEC.md#anmeldung)). Im Simulator lässt sich die Server-Adresse beim Start vorgeben: `xcrun simctl launch booted com.b-velop.onkel-bummel -setupServer onkel-bummel.<tailnet>.ts.net`. Einen Push mit Bild probiert man dort mit `xcrun simctl push booted com.b-velop.onkel-bummel push.json` aus.
+Signiert wird automatisch mit dem Team `6GGU8ET2C4`. Die App braucht im Identity-Server den Public Client `onkel-bummel-ios` mit der Redirect-URI `com.b-velop.onkel-bummel:/oauth/callback` (siehe [Spezifikation](docs/SPEC.md#anmeldung)). Im Simulator lässt sich die Server-Adresse beim Start vorgeben: `xcrun simctl launch booted com.b-velop.onkel-bummel -setupServer onkel-bummel.<tailnet>.ts.net`. Einen Push mit Bild probiert man dort mit `xcrun simctl push booted com.b-velop.onkel-bummel push.json` aus. Ohne Server geht es mit „Ohne Server ausprobieren“ bei der Einrichtung. Jeder Pull Request, der `ios/` ändert, baut die App und testet `OnkelBummelKit` ([ios-check.yml](.github/workflows/ios-check.yml)).
 
 Push im LXC einschalten: den APNs-Schlüssel nach `/etc/onkel-bummel/secrets/apns.p8` legen (`chown root:1654`, `chmod 640`), in `/etc/onkel-bummel/onkel-bummel.env` `Apns__KeyPath=/run/secrets/apns.p8`, `Apns__KeyId` und `Apns__TeamId=6GGU8ET2C4` eintragen, dann `docker compose up -d`.
 
