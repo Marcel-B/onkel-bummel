@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios'
 import type {
   ActionResult,
+  ClientConfig,
   CreatedPublishToken,
   Device,
   Message,
@@ -19,7 +20,10 @@ export const http = axios.create({
   headers: { 'X-Requested-With': 'XMLHttpRequest' },
 })
 
-/** Sends the browser to the identity server and back to where it is now. */
+/**
+ * Sends the browser to the identity server and back to where it is now. Without identity server the server sends it
+ * straight back, and the web interface asks for the access key.
+ */
 export function signIn(returnUrl = location.pathname + location.search) {
   location.assign(`/auth/login?returnUrl=${encodeURIComponent(returnUrl)}`)
 }
@@ -64,6 +68,13 @@ export const api = {
   async me(): Promise<WebUser> {
     // Outside of /api/v1, and a 401 here is an answer, not a reason to redirect.
     return (await axios.get<WebUser>('/auth/me')).data
+  },
+  async config(): Promise<ClientConfig> {
+    return (await axios.get<ClientConfig>('/api/v1/config')).data
+  },
+  /** Signs in with the access key; the session cookie comes back. A wrong key is a 401, no reason to redirect. */
+  async signInWithKey(key: string) {
+    await axios.post('/auth/key', { key })
   },
 
   async messages(filter: MessageFilter, page: { before?: number; after?: number; limit?: number } = {}) {

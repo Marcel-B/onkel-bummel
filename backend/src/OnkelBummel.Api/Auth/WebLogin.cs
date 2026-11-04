@@ -12,6 +12,9 @@ namespace OnkelBummel.Api.Auth;
 /// <param name="Name">User name at the identity server, for the header of the web interface.</param>
 public sealed record WebUserDto(string Sub, string Name);
 
+/// <summary>Body of <c>POST /auth/key</c>.</summary>
+public sealed record AccessKeyLogin(string? Key);
+
 /// <summary>
 /// Sign-in of the web interface: the server runs OpenID Connect with the identity server (code with PKCE) and
 /// gives the browser only a session cookie. No token reaches the browser, and none needs refreshing, because the
@@ -47,6 +50,17 @@ public static class WebLogin
             // The API answers with a status, the web interface decides where to go from there.
             options.Events.OnRedirectToLogin = context => SetStatus(context.Response, StatusCodes.Status401Unauthorized);
             options.Events.OnRedirectToAccessDenied = context => SetStatus(context.Response, StatusCodes.Status403Forbidden);
+            // A session made with the access key ends when there is a new key, or an identity server instead.
+            options.Events.OnValidatePrincipal = async context =>
+            {
+                if (context.Principal?.FindFirst(AccessKeyStore.KeyHashClaim) is not { } claim)
+                    return;
+                if (!context.HttpContext.RequestServices.GetRequiredService<AccessKeyStore>().IsCurrent(claim.Value))
+                {
+                    context.RejectPrincipal();
+                    await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                }
+            };
         });
 
         services.AddOptions<OpenIdConnectOptions>(OpenIdConnectDefaults.AuthenticationScheme)
@@ -114,12 +128,33 @@ public static class WebLogin
 
     public static RouteGroupBuilder MapWebLoginEndpoints(this RouteGroupBuilder auth)
     {
-        auth.MapGet("/login", (string? returnUrl, IOptions<OidcOptions> oidc) =>
+        auth.MapGet("/login", (string? returnUrl, IOptions<OidcOptions> oidc, AccessKeyStore keys) =>
                 IsConfigured(oidc.Value)
                     ? Results.Challenge(new AuthenticationProperties { RedirectUri = LocalOrRoot(returnUrl) }, [OpenIdConnectDefaults.AuthenticationScheme])
-                    : TypedResults.Problem("Oidc:Issuer und Oidc:WebClientSecret fehlen.", statusCode: StatusCodes.Status503ServiceUnavailable,
-                        title: "Anmeldung nicht eingerichtet"))
-            .WithSummary("Sign in at the identity server, then back to returnUrl");
+                    // Without identity server the web interface asks for the access key itself.
+                    : keys.IsActive
+                        ? Results.Redirect(LocalOrRoot(returnUrl))
+                        : TypedResults.Problem("Oidc:WebClientSecret fehlt.", statusCode: StatusCodes.Status503ServiceUnavailable,
+                            title: "Anmeldung nicht eingerichtet"))
+            .WithSummary("Sign in at the identity server, then back to returnUrl; without one, straight back to returnUrl");
+
+        auth.MapPost("/key", async Task<IResult> (AccessKeyLogin login, AccessKeyStore keys, HttpContext context) =>
+            {
+                if (!keys.IsActive)
+                    return Problems.NotFound("Dieser Server meldet über den Identity-Server an, nicht mit Zugangsschlüssel.");
+                if (!keys.Matches(login.Key?.Trim()))
+                {
+                    context.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger(typeof(WebLogin))
+                        .LogInformation("Wrong access key from {RemoteIp}", context.Connection.RemoteIpAddress);
+                    return TypedResults.Problem("Der Zugangsschlüssel stimmt nicht.", statusCode: StatusCodes.Status401Unauthorized,
+                        title: "Falscher Zugangsschlüssel");
+                }
+                await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme,
+                    keys.Principal(CookieAuthenticationDefaults.AuthenticationScheme),
+                    new AuthenticationProperties { IsPersistent = true });
+                return Results.NoContent();
+            })
+            .WithSummary("Sign the web interface in with the access key of a server without identity server");
 
         auth.MapGet("/me", (ClaimsPrincipal user) =>
                 TypedResults.Ok(new WebUserDto(

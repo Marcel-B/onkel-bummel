@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import QRCode from 'qrcode'
 import { onMounted, ref } from 'vue'
+import { api } from '@/api/client'
 
 // The code holds only the address; the app fetches everything else from /api/v1/config.
 const address = location.origin
 const qr = ref('')
+/** The app signs in only at an identity server so far. */
+const keyLogin = ref(false)
 
 onMounted(async () => {
+  void api.config().then((config) => (keyLogin.value = config.login === 'key'), () => {})
   qr.value = await QRCode.toDataURL(address, { margin: 1, width: 240, errorCorrectionLevel: 'M' })
 })
 </script>
@@ -21,7 +25,11 @@ onMounted(async () => {
         <li>Onkel Bummel öffnen und „QR-Code scannen“ wählen, oder die Adresse eintippen:</li>
       </ol>
       <code class="my-3 block rounded-lg bg-stone-100 px-3 py-2 font-mono text-xs select-all dark:bg-stone-800">{{ address }}</code>
-      <p>Danach meldest du dich beim Identity-Server an, und die App registriert das Gerät für Pushes.</p>
+      <p v-if="keyLogin">
+        Dieser Server läuft ohne Identity-Server. Mit dem Zugangsschlüssel kann sich die App noch nicht anmelden, das
+        kommt in einer späteren Version.
+      </p>
+      <p v-else>Danach meldest du dich beim Identity-Server an, und die App registriert das Gerät für Pushes.</p>
     </div>
   </div>
 </template>
