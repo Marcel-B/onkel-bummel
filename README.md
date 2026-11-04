@@ -6,7 +6,7 @@ Eigener Benachrichtigungsdienst mit Verlauf, Suche und Bildern, benannt nach mei
 |---|---|
 | Server (C# / .NET 10) | Senden (JSON, multipart, Grafana-Webhook) mit Bildern und Thumbnails, Publish-Tokens, Verlauf mit Suche, Live-Stream (SSE), Actions, Anmeldung per JWT, Aufbewahrung, Aufräumen, Sicherung in die Nextcloud, Metriken und Loki |
 | Push (APNs), Geräte | Push an abonnierte Geräte mit Retry, Bild über signierten Link, Actions als Buttons, Badge |
-| Web-Oberfläche (Vue 3) | Anmeldung über den Identity-Server, Timeline live, Suche und Filter, Galerie, Actions, Gelesen und Löschen, Verwaltung von Topics, Tokens und Geräten, QR-Code für die App |
+| Web-Oberfläche (Vue 3) | Anmeldung über den Identity-Server oder mit Zugangsschlüssel, Timeline live, Suche und Filter, Galerie, Actions, Gelesen und Löschen, Verwaltung von Topics, Tokens und Geräten, QR-Code für die App |
 | iOS-App | Einrichtung mit Login, Inbox, Topics mit Galerie, Suche, Abos, Cache und Live-Updates, Notification Service Extension, Demo ohne Server, Privacy Manifest |
 
 ## Lokal starten
@@ -29,7 +29,21 @@ npm run build   # nach backend/src/OnkelBummel.Api/wwwroot, dann liefert sie der
 npm run dev     # oder mit Hot Reload unter http://localhost:5173, /api und /auth gehen an :8080
 ```
 
-Die Anmeldung braucht einen Identity-Server, lokal `http://localhost:5001` mit dem Client `onkel-bummel-web` (Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/auth/signed-out`) und dem Secret in `Oidc__WebClientSecret`. Der Login endet immer auf :8080; das Cookie gilt auch für :5173, weil Cookies den Port nicht beachten.
+Ohne Identity-Server meldest du dich mit dem Zugangsschlüssel an, den der Server beim ersten Start ins Log schreibt (siehe [Eigener Server](#eigener-server)). Mit Identity-Server, wie in Marcels Betrieb, gilt lokal `http://localhost:5001` mit dem Client `onkel-bummel-web` (Redirect `http://localhost:8080/auth/callback`, Post-Logout `http://localhost:8080/auth/signed-out`) und dem Secret in `Oidc__WebClientSecret`. Der Login endet immer auf :8080; das Cookie gilt auch für :5173, weil Cookies den Port nicht beachten.
+
+## Eigener Server
+
+Onkel Bummel läuft auch ohne Identity-Server, etwa auf dem eigenen Rechner. Voraussetzung: Docker.
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/Marcel-B/onkel-bummel/main/deploy/eigener-server/docker-compose.yml
+docker compose up -d
+docker compose logs onkel-bummel | grep Zugangsschlüssel
+```
+
+Die Web-Oberfläche liegt unter http://localhost:8080. Dort meldest du dich mit dem Zugangsschlüssel (`obk_…`) aus dem Log an, legst unter Verwaltung → Publish-Tokens einen Token an und sendest damit wie unten beschrieben. Der Schlüssel steht nur beim ersten Start im Log; einen neuen gibt es mit `docker compose exec onkel-bummel dotnet OnkelBummel.Api.dll --new-access-key`, der alte gilt dann nicht mehr.
+
+Der Server ist so nur auf dem eigenen Rechner erreichbar. Für andere Geräte im Netz gehört HTTPS davor, etwa mit Tailscale oder einem Reverse Proxy. Die iOS-App kann sich mit dem Zugangsschlüssel noch nicht anmelden, und Pushes aufs iPhone gibt es nur mit Marcels APNs-Schlüssel.
 
 ## Senden
 

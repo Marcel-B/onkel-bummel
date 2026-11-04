@@ -37,6 +37,13 @@ Onkel Bummel zieht seit PR #8 fertige Images, bestätigt am 04.11.2026 mit dem U
 3. **Review-Notizen:** Die App ist der Client für einen selbst gehosteten Server; zum Prüfen „Ohne Server ausprobieren“ und in den Einstellungen „Beispielnachricht senden“. Dazu ein kurzes Video vom echten Betrieb mit Push.
 4. **Verteilung wählen:** öffentlich oder „Unlisted“ (nur über den Link auffindbar).
 
+## Eigenbetrieb ohne Identity-Server (Server und Web fertig)
+
+Andere können Onkel Bummel mit [deploy/eigener-server/docker-compose.yml](../deploy/eigener-server/docker-compose.yml) ohne Identity-Server betreiben und melden sich mit dem Zugangsschlüssel an. Offen:
+
+1. **App mit Zugangsschlüssel.** Bei der Einrichtung `login` aus `/api/v1/config` lesen; bei `key` den Schlüssel abfragen, in der Keychain ablegen und als Bearer senden statt OIDC. Das setzt voraus, dass die App im App Store auch fremde Server unterstützen soll (siehe App Store).
+2. **Push für fremde Server.** APNs nimmt Pushes an die App nur mit dem Schlüssel aus Marcels Team an. Möglich wäre ein Relay wie bei ntfy.sh, das Marcel betreibt; ohne Relay gibt es bei anderen keinen Push, nur den Live-Stream bei offener App oder Web-Oberfläche. Entscheidung steht aus.
+
 ## Funktionen
 
 1. **Kurzbefehle und Widget (Meilenstein 8 des ursprünglichen Plans, noch nicht in der [Spezifikation](SPEC.md)).** App Intents für Kurzbefehle, z. B. „Nachricht senden“ und „Ungelesene zeigen“, und ein Widget „Ungelesen“.

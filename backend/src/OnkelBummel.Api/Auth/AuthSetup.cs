@@ -35,16 +35,20 @@ public static class AuthSetup
     public static IServiceCollection AddOnkelBummelAuth(this IServiceCollection services)
     {
         services.AddAuthentication(ApiScheme)
-            .AddPolicyScheme(ApiScheme, "Publish token, access token or session cookie", options =>
+            .AddPolicyScheme(ApiScheme, "Publish token, access key, access token or session cookie", options =>
                 options.ForwardDefaultSelector = context =>
                     PublishTokenHandler.ReadToken(context.Request) is not null ? PublishTokenHandler.SchemeName
+                    : AccessKeyHandler.ReadKey(context.Request) is not null ? AccessKeyHandler.SchemeName
                     : WebLogin.UsesCookie(context.Request) ? CookieAuthenticationDefaults.AuthenticationScheme
                     : JwtBearerDefaults.AuthenticationScheme)
             .AddScheme<AuthenticationSchemeOptions, PublishTokenHandler>(PublishTokenHandler.SchemeName, null)
+            .AddScheme<AuthenticationSchemeOptions, AccessKeyHandler>(AccessKeyHandler.SchemeName, null)
             .AddJwtBearer()
             .AddCookie()
             .AddOpenIdConnect();
         services.AddWebLogin();
+        services.AddSingleton<AccessKeyStore>();
+        services.AddHostedService<AccessKeyStartup>();
 
         services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
             .Configure<IOptions<OidcOptions>>((options, oidc) =>

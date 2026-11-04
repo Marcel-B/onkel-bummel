@@ -1,0 +1,24 @@
+# Onkel Bummel auf dem eigenen Rechner, ohne Identity-Server. Starten mit:
+#   docker compose up -d
+#   docker compose logs onkel-bummel | grep Zugangsschlüssel
+# Die Web-Oberfläche liegt dann unter http://localhost:8080, angemeldet wird mit dem Zugangsschlüssel aus dem Log.
+# Einen neuen Schlüssel gibt es mit: docker compose exec onkel-bummel dotnet OnkelBummel.Api.dll --new-access-key
+name: onkel-bummel
+
+services:
+  onkel-bummel:
+    image: ghcr.io/marcel-b/onkel-bummel:main
+    restart: unless-stopped
+    ports:
+      # Nur auf diesem Rechner erreichbar. Für andere Geräte im Netz "8080:8080", dann aber besser mit HTTPS davor.
+      - "127.0.0.1:8080:8080"
+    environment:
+      TZ: Europe/Berlin
+      # Adresse, unter der andere Geräte den Server erreichen; nur für Links in Pushes nötig.
+      # Server__PublicUrl: https://onkel-bummel.example.de
+    volumes:
+      # Datenbank, Anhänge und der Hash des Zugangsschlüssels
+      - daten:/data
+
+volumes:
+  daten:

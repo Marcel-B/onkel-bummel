@@ -15,13 +15,26 @@ const router = useRouter()
 
 const menuOpen = ref(false)
 const search = ref('')
+const accessKey = ref('')
+const signingIn = ref(false)
 
-onMounted(async () => {
-  await auth.load()
-  if (auth.state !== 'signedIn') return
+onMounted(() => auth.load())
+
+// Right away when the cookie was there, or once the access key was entered.
+watch(() => auth.state, async (state, before) => {
+  if (state !== 'signedIn' || before === 'signedIn') return
   await topics.load()
   live.start()
 })
+
+async function submitKey() {
+  signingIn.value = true
+  try {
+    if (await auth.signInWithKey(accessKey.value)) accessKey.value = ''
+  } finally {
+    signingIn.value = false
+  }
+}
 
 watch(() => route.fullPath, () => {
   menuOpen.value = false
@@ -49,6 +62,32 @@ function submitSearch() {
 <template>
   <div v-if="auth.state === 'loading'" class="flex h-dvh items-center justify-center text-stone-500">
     <LoaderCircle class="size-6 animate-spin" />
+  </div>
+
+  <div v-else-if="auth.state === 'needsKey'" class="flex h-dvh items-center justify-center p-6">
+    <form class="card w-full max-w-sm p-6" @submit.prevent="submitKey">
+      <img src="/favicon.svg" alt="" class="mx-auto mb-4 size-12" />
+      <h1 class="mb-2 text-center text-lg font-semibold">Onkel Bummel</h1>
+      <p class="mb-4 text-sm text-stone-600 dark:text-stone-400">
+        Melde dich mit dem Zugangsschlüssel an. Der Server schreibt ihn beim ersten Start ins Log, einen neuen
+        gibt es mit <code>--new-access-key</code>.
+      </p>
+      <label for="access-key" class="mb-1 block text-sm font-medium">Zugangsschlüssel</label>
+      <input
+        id="access-key"
+        v-model="accessKey"
+        type="password"
+        autocomplete="current-password"
+        placeholder="obk_…"
+        required
+        class="input mb-3 w-full font-mono"
+      />
+      <p v-if="auth.error" class="mb-3 text-sm text-red-600 dark:text-red-400" role="alert">{{ auth.error }}</p>
+      <button class="btn-primary w-full justify-center" :disabled="signingIn || !accessKey.trim()">
+        <LoaderCircle v-if="signingIn" class="size-4 animate-spin" />
+        Anmelden
+      </button>
+    </form>
   </div>
 
   <div v-else-if="auth.state !== 'signedIn'" class="flex h-dvh items-center justify-center p-6">

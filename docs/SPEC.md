@@ -4,7 +4,7 @@ Onkel Bummel ist ein eigener Benachrichtigungsdienst für einen Nutzer, benannt 
 
 - **Server:** C# / .NET 10 (ASP.NET Core) in Docker im Heimnetz, im Tailnet unter `https://onkel-bummel.<tailnet>.ts.net`
 - **Clients:** native iOS-App (SwiftUI, APNs) und eine Web-Oberfläche, die vom Server ausgeliefert wird
-- **Anmeldung:** über den eigenen Identity-Server ([Marcel-B/Identity](https://github.com/Marcel-B/Identity))
+- **Anmeldung:** über den eigenen Identity-Server ([Marcel-B/Identity](https://github.com/Marcel-B/Identity)); wer Onkel Bummel ohne Identity-Server selbst betreibt, meldet sich mit einem Zugangsschlüssel an (siehe [Anmeldung](#anmeldung))
 - **Monitoring:** Prometheus, Loki und Grafana im gemeinsamen Monitoring-LXC ([Marcel-B/Tonwerk-AI → `deploy/monitoring/`](https://github.com/Marcel-B/Tonwerk-AI/tree/main/deploy/monitoring))
 
 Nicht im Umfang: mehrere Nutzer, Android, MQTT, ntfy-Kompatibilität, E-Mail/SMS, Regeln/Eskalation, Critical Alerts.
@@ -101,9 +101,10 @@ Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Co
 | `GET devices`, `POST devices`, `PUT devices/{id}/subscriptions`, `DELETE devices/{id}` | eigene Geräte; registrieren mit `{"id"?, "name", "apnsToken", "environment", "topics"?}` (bekannt am APNs-Token oder an der `id`, die die App sich merkt, so bleibt das Gerät bei neuem Token dasselbe; neue Geräte abonnieren `["*"]`); Abos setzen mit `{"topics": […]}`; abmelden |
 | `GET attachments/{id}/push-thumb?expires=&signature=` (ohne Anmeldung) | Thumbnail über den signierten Link aus einem Push, 15 Minuten gültig |
 | `GET/POST/DELETE publish-tokens` | Publish-Tokens verwalten; `POST {"name", "topics": [...]}` gibt den Schlüssel als `token` zurück, nur dieses eine Mal |
-| `GET config` (ohne Anmeldung) | Issuer, Client-ID der App und Audience für die Einrichtung der App |
+| `GET config` (ohne Anmeldung) | Issuer, Client-ID der App und Audience für die Einrichtung der App, dazu `login`: `oidc` mit Identity-Server, `key` mit Zugangsschlüssel |
 | `GET /health` (ohne Anmeldung) | Zustand für Docker und Blackbox-Probes |
-| `GET /auth/login?returnUrl=`, `GET /auth/me`, `POST /auth/logout` | Anmeldung der Web-Oberfläche (siehe [Anmeldung](#anmeldung)): zum Identity-Server und zurück auf `returnUrl` (nur Pfade dieses Servers); der angemeldete Benutzer als `{"sub", "name"}` (`401` ohne Anmeldung, `403` ohne Rolle); abmelden hier und beim Identity-Server |
+| `GET /auth/login?returnUrl=`, `GET /auth/me`, `POST /auth/logout` | Anmeldung der Web-Oberfläche (siehe [Anmeldung](#anmeldung)): zum Identity-Server und zurück auf `returnUrl` (nur Pfade dieses Servers); der angemeldete Benutzer als `{"sub", "name"}` (`401` ohne Anmeldung, `403` ohne Rolle); abmelden hier und beim Identity-Server. Ohne Identity-Server führt `/auth/login` gleich zurück auf `returnUrl` |
+| `POST /auth/key` `{"key"}` | Anmeldung der Web-Oberfläche mit dem Zugangsschlüssel, nur ohne Identity-Server (sonst `404`); `204` mit Session-Cookie, `401` bei falschem Schlüssel |
 
 ## Push (APNs)
 
@@ -117,6 +118,11 @@ Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Co
 
 ## Anmeldung
 
+Es gibt zwei Betriebsarten, entschieden durch `Oidc:Issuer`:
+
+- **Mit Identity-Server** (`Oidc:Issuer` gesetzt, so läuft Marcels Server): wie unten beschrieben.
+- **Ohne Identity-Server** (`Oidc:Issuer` leer, für alle, die Onkel Bummel selbst betreiben): Beim ersten Start legt der Server einen **Zugangsschlüssel** `obk_…` an (256 Zufallsbits) und schreibt ihn einmal ins Log; gespeichert wird nur sein SHA-256-Hash in `<DataPath>/access-key.sha256`. Der Schlüssel hat alle Rechte, wie die Rolle `admin`. Die Web-Oberfläche fragt nach ihm (`POST /auth/key`) und bekommt dafür dasselbe Session-Cookie wie mit Identity-Server; Skripte und Clients schicken ihn als `Authorization: Bearer obk_…`. `dotnet OnkelBummel.Api.dll --new-access-key` legt einen neuen an; der alte gilt dann nicht mehr, und alle Browser-Sitzungen damit enden. Publish-Tokens funktionieren in beiden Betriebsarten gleich. Die iOS-App kann sich mit dem Zugangsschlüssel noch nicht anmelden, und Pushes an die App aus dem App Store kann nur ein Server mit Marcels APNs-Schlüssel senden.
+
 Im Admin des Identity-Servers einmal anlegen (keine Codeänderung dort nötig):
 
 | Was | Werte |
@@ -126,15 +132,16 @@ Im Admin des Identity-Servers einmal anlegen (keine Codeänderung dort nötig):
 | Client `onkel-bummel-web` | vertraulich, Zustimmung `implicit`, `authorization_code`, Redirect `https://onkel-bummel.<tailnet>.ts.net/auth/callback`, Post-Logout `https://onkel-bummel.<tailnet>.ts.net/auth/signed-out` (lokal zusätzlich dasselbe mit `http://localhost:8080`), Scopes `profile` und `roles` |
 | Client `onkel-bummel-ios` | Public Client (PKCE), Zustimmung `implicit`, `authorization_code` + `refresh_token`, Redirect `com.b-velop.onkel-bummel:/oauth/callback`, Scope `onkel-bummel-api` |
 
-Im Server gibt es drei Anmeldeverfahren:
+Im Server gibt es drei Anmeldeverfahren mit Identity-Server und eines ohne:
 
 - **Web-Oberfläche:** Cookie + OpenID Connect (Code mit PKCE, Antwort per Query, Scopes `openid profile roles`). Die Rolle steht im ID-Token. Der Browser bekommt nur das Session-Cookie `onkel-bummel` (HttpOnly, SameSite=Lax, 30 Tage, verlängert sich bei Benutzung), kein Token. Ein Refresh Token ist nicht nötig, weil der Server mit dem Token keine andere API aufruft. Änderungen über die API mit dem Cookie brauchen den Header `X-Requested-With`, sonst `403`; eine fremde Seite kann ihn ohne CORS-Preflight nicht setzen. Hinter `tailscale serve` mit `UseForwardedHeaders`.
 - **iOS-App:** JWT-Bearer. Geprüft werden Issuer, Audience `onkel-bummel-api`, Ablauf, Signatur (JWKS aus der Discovery) und die Rolle `onkel-bummel` oder `admin` (`role` kann String oder Array sein). Der Benutzer wird über `sub` erkannt.
 - **Sender:** Publish-Tokens `ob_…`, eigener Authentication-Handler
+- **Ohne Identity-Server:** Zugangsschlüssel `obk_…`, eigener Authentication-Handler; mit gesetztem `Oidc:Issuer` zählt er nicht
 
 ## Web-Oberfläche
 
-Vue 3 mit TypeScript, Vite, Tailwind CSS, Pinia und Axios in `backend/web/`. Der Build landet im `wwwroot` des Servers, der die App ausliefert: Jeder Pfad außerhalb von `/api` bekommt `index.html` (mit Content-Security-Policy, ohne externe Ressourcen), Dateien unter `/assets` tragen einen Hash und werden ein Jahr gecacht. Hell und dunkel nach Systemeinstellung, auch auf dem Handy benutzbar. Ohne Anmeldung geht es gleich zum Identity-Server.
+Vue 3 mit TypeScript, Vite, Tailwind CSS, Pinia und Axios in `backend/web/`. Der Build landet im `wwwroot` des Servers, der die App ausliefert: Jeder Pfad außerhalb von `/api` bekommt `index.html` (mit Content-Security-Policy, ohne externe Ressourcen), Dateien unter `/assets` tragen einen Hash und werden ein Jahr gecacht. Hell und dunkel nach Systemeinstellung, auch auf dem Handy benutzbar. Ohne Anmeldung geht es gleich zum Identity-Server, auf einem Server ohne Identity-Server fragt die Oberfläche nach dem Zugangsschlüssel.
 
 - Topic-Liste mit Ungelesen-Zählern, daneben die Timeline (Infinite Scroll, live per SSE, nach jedem Wiederverbinden neu geladen); Ungelesen-Zahl im Tab-Titel
 - Suche und Filter: Topic, Mindestpriorität, Tags, Zeitraum, nur ungelesen, nur mit Bildern; der Filter steht in der Adresse (`/topics/garage?q=tor&prio=4&tags=a,b&von=2026-11-01&bis=2026-11-03&ungelesen=1&bilder=1`)
@@ -227,6 +234,8 @@ Alles in `appsettings.json`, überschreibbar per Umgebungsvariable (`Abschnitt__
 Der Server läuft in einem unprivilegierten LXC auf Proxmox, den `deploy/proxmox/create-lxc.sh` anlegt. Tailscale läuft im LXC selbst, der Server als Docker-Container im Host-Netz des LXC (`deploy/docker-compose.yml`) und lauscht nur auf `127.0.0.1`. `tailscale serve` stellt die App unter `https://onkel-bummel.<tailnet>.ts.net` und die Metriken unter Port 9464 bereit, beide mit gültigem Zertifikat. Ausgehend erreicht der Server über Tailscale und MagicDNS den Identity-Server, Loki und die Ziele von Actions.
 
 Neue Commits auf `main` testet und baut GitHub Actions (`.github/workflows/server-image.yml`) und legt das Image in der GitHub Container Registry ab. Ein systemd-Timer im LXC (`deploy/proxmox/update.sh`) zieht es und startet den Server neu; mit `IMAGE_REPO=` baut der LXC wie früher selbst. Kommt die neue Version nicht gesund hoch, laufen wieder das vorige Image und die Datenbank von vor dem Update. Einzelheiten in [deploy/proxmox/README.md](../deploy/proxmox/README.md).
+
+Wer Onkel Bummel selbst betreibt, startet das Image aus der Registry mit [deploy/eigener-server/docker-compose.yml](../deploy/eigener-server/docker-compose.yml): ohne Identity-Server, mit Zugangsschlüssel, die Daten in einem Docker-Volume, erreichbar unter `http://localhost:8080`.
 
 ## Umstellung der bisherigen ntfy-Sender
 

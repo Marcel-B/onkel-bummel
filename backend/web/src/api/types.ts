@@ -91,6 +91,14 @@ export interface WebUser {
   name: string
 }
 
+/** GET /api/v1/config: how this server signs in. */
+export interface ClientConfig {
+  name: string
+  issuer: string | null
+  /** `oidc` with an identity server, `key` with the access key of a server without one. */
+  login: 'oidc' | 'key'
+}
+
 /** Events of GET /api/v1/stream. */
 export interface ReadEvent {
   ids: number[]

@@ -123,7 +123,8 @@ public sealed class WebLoginTests : IAsyncLifetime
         client.DefaultRequestHeaders.Authorization = sender.DefaultRequestHeaders.Authorization;
 
         var sent = await client.PostAsJsonAsync("/api/v1/messages", new { topic = "garage", message = "Tor offen" }, CancellationToken);
-        var login = await client.GetAsync("/auth/login", CancellationToken);
+        var login = await _factory.WithWebHostBuilder(b => b.UseSetting("Oidc:WebClientSecret", null)).CreateClient()
+            .GetAsync("/auth/login", CancellationToken);
 
         Assert.Equal(HttpStatusCode.Created, sent.StatusCode);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, login.StatusCode);

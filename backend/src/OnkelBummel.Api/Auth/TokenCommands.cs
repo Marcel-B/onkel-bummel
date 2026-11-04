@@ -3,7 +3,7 @@ using OnkelBummel.Api.Data;
 namespace OnkelBummel.Api.Auth;
 
 /// <summary>
-/// Manages publish tokens from the command line, for as long as there is no web interface, e.g.
+/// Manages publish tokens and the access key from the command line, e.g.
 /// <c>docker compose exec onkel-bummel dotnet OnkelBummel.Api.dll --create-token grafana alarme</c>.
 /// </summary>
 public static class TokenCommands
@@ -11,15 +11,17 @@ public static class TokenCommands
     public const string Create = "--create-token";
     public const string List = "--list-tokens";
     public const string Delete = "--delete-token";
+    public const string NewAccessKey = "--new-access-key";
 
     private const string Usage = """
         Aufruf:
           --create-token <name> <topics>   Token anlegen; topics kommagetrennt, * für alle
           --list-tokens                    Tokens anzeigen
           --delete-token <id>              Token löschen
+          --new-access-key                 neuer Zugangsschlüssel (nur ohne Identity-Server), meldet alle Browser ab
         """;
 
-    public static bool IsCommand(string[] args) => args is [Create or List or Delete, ..];
+    public static bool IsCommand(string[] args) => args is [Create or List or Delete or NewAccessKey, ..];
 
     public static async Task<int> RunAsync(string[] args, IServiceProvider services, TextWriter output, TextWriter error)
     {
@@ -58,6 +60,19 @@ public static class TokenCommands
                 }
                 await error.WriteLineAsync($"Token {id} gibt es nicht.");
                 return 1;
+            case [NewAccessKey]:
+            {
+                var keys = scope.ServiceProvider.GetRequiredService<AccessKeyStore>();
+                if (!keys.IsActive)
+                {
+                    await error.WriteLineAsync("Dieser Server meldet über den Identity-Server an (Oidc:Issuer), ein Zugangsschlüssel gilt hier nicht.");
+                    return 1;
+                }
+                await output.WriteLineAsync("Neuer Zugangsschlüssel, der alte gilt nicht mehr:");
+                await output.WriteLineAsync(keys.Create());
+                await output.WriteLineAsync("Er wird nur dieses eine Mal angezeigt.");
+                return 0;
+            }
             default:
                 await error.WriteLineAsync(Usage);
                 return 2;
