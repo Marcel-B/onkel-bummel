@@ -9,6 +9,7 @@ export const router = createRouter({
     { path: '/topics/:topic', name: 'topic', component: TimelineView, props: true },
     { path: '/topics/:topic/galerie', name: 'gallery', component: () => import('./views/GalleryView.vue'), props: true },
     { path: '/galerie', name: 'gallery-all', component: () => import('./views/GalleryView.vue') },
+    { path: '/senden', name: 'send', component: () => import('./views/SendView.vue') },
     {
       path: '/verwaltung',
       component: () => import('./views/admin/AdminView.vue'),

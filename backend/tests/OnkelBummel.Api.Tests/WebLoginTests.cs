@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Web;
 using Microsoft.AspNetCore.Mvc.Testing;
 using OnkelBummel.Api.Auth;
@@ -56,6 +57,33 @@ public sealed class WebLoginTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, withoutHeader.StatusCode);
         Assert.Equal("application/problem+json", withoutHeader.Content.Headers.ContentType?.MediaType);
         Assert.Equal(HttpStatusCode.OK, withHeader.StatusCode);
+    }
+
+    [Fact]
+    public async Task Sends_a_message_with_an_image_from_the_web_interface()
+    {
+        var browser = CreateBrowser();
+        await SignInAsync(browser);
+
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent("garage"), "topic" },
+            { new StringContent("Tor offen"), "title" },
+            { new StringContent("Seit **10 Minuten**"), "message" },
+            { new StringContent("4"), "priority" },
+            { new StringContent("warning,tor"), "tags" },
+            { new ByteArrayContent(TestImages.Png(40, 30)), "file", "tor.png" },
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/messages") { Content = form };
+        request.Headers.Add(WebLogin.RequestedWithHeader, "XMLHttpRequest");
+        var response = await browser.SendAsync(request, CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var message = await response.Content.ReadFromJsonAsync<JsonElement>(CancellationToken);
+        Assert.Equal("garage", message.GetProperty("topic").GetString());
+        Assert.Equal(4, message.GetProperty("priority").GetInt32());
+        Assert.Equal(["warning", "tor"], message.GetProperty("tags").EnumerateArray().Select(t => t.GetString()));
+        Assert.Equal(1, message.GetProperty("attachments").GetArrayLength());
     }
 
     [Fact]

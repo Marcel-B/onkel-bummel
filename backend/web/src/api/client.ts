@@ -82,6 +82,10 @@ export const api = {
   async markAllRead(topic: string | null, upToId: number | null) {
     return (await http.post<{ count: number }>('/messages/read', { topic, upToId })).data.count
   },
+  /** Sends a message; the key makes a repeated send (double click, retry) store it only once. */
+  async publish(form: FormData, idempotencyKey: string) {
+    return (await http.post<Message>('/messages', form, { headers: { 'Idempotency-Key': idempotencyKey } })).data
+  },
   async runAction(id: number, index: number) {
     return (await http.post<ActionResult>(`/messages/${id}/actions/${index}`)).data
   },

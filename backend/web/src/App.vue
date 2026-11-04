@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { LoaderCircle, LogOut, Menu, Search, Settings, X } from 'lucide-vue-next'
-import { onMounted, ref, watch } from 'vue'
+import { LoaderCircle, LogOut, Menu, Search, Send, Settings, X } from 'lucide-vue-next'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'
 import TopicList from './components/TopicList.vue'
 import { useAuthStore } from './stores/auth'
@@ -33,9 +33,14 @@ watch(() => topics.unreadTotal, (unread) => {
   document.title = unread > 0 ? `(${unread}) Onkel Bummel` : 'Onkel Bummel'
 })
 
+/** The topic on screen, if any. */
+const currentTopic = computed(() =>
+  route.name === 'topic' || route.name === 'gallery' ? String(route.params.topic) : undefined,
+)
+
 /** Searches in the topic on screen, otherwise in all of them. */
 function submitSearch() {
-  const topic = route.name === 'topic' || route.name === 'gallery' ? String(route.params.topic) : undefined
+  const topic = currentTopic.value
   const query = { ...route.query, q: search.value.trim() || undefined }
   void router.push(topic ? { name: 'topic', params: { topic }, query } : { name: 'inbox', query })
 }
@@ -85,6 +90,14 @@ function submitSearch() {
         :class="live.connected ? 'bg-emerald-500' : 'bg-stone-400'"
         :title="live.connected ? 'Live verbunden' : 'Keine Live-Verbindung'"
       />
+      <RouterLink
+        :to="{ name: 'send', query: currentTopic ? { topic: currentTopic } : {} }"
+        class="btn-icon"
+        title="Nachricht senden"
+        aria-label="Nachricht senden"
+      >
+        <Send class="size-5" />
+      </RouterLink>
       <RouterLink to="/verwaltung" class="btn-icon" title="Verwaltung" aria-label="Verwaltung">
         <Settings class="size-5" />
       </RouterLink>
