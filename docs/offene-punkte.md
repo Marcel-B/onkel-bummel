@@ -4,9 +4,8 @@ Was noch offen ist, eine Entscheidung braucht oder erst im Betrieb bestätigt we
 
 ## Im Betrieb bestätigen
 
-1. **Erstes Update aus der Registry.** Seit PR #8 baut GitHub Actions das Image ([server-image.yml](../.github/workflows/server-image.yml)), CT 106 zieht es nur noch (`IMAGE_REPO` in `/etc/onkel-bummel/source.env`, 1 GiB RAM). Die Umstellung selbst lief über `setup.sh` von Hand. Ein Update durch den Timer nach einem neuen Commit steht noch aus: nach dem nächsten Push auf `main` in CT 106 `journalctl -u onkel-bummel-update -n 30` ansehen. Dort muss „Spiele … ein“ ohne „Tests“ und „Image bauen“ stehen.
-2. **fil-o-mat mit Bild und Knöpfen.** fil-o-mat sendet seit 04.11.2026 an das Topic `filomat`, angekommen ist bisher nur die Testmeldung ohne Bild und ohne Actions. Bei der nächsten Meldung zu einem fertigen oder abgebrochenen Druck prüfen, ob das Kamera- oder Vorschaubild dabei ist, und bei „Welche Spule?“ die Knöpfe (`POST /choices/{token}` an fil-o-mat).
-3. **GitGuardian-Warnung.** Marcel hat am 04.11.2026 eine Warnung gesehen. Alle PR-Prüfungen in onkel-bummel, Slipways und fil-o-mat melden „No secrets detected“, und eine Suche in den Commits seit dem 01.11.2026 fand nur Metriknamen und die Prüfung auf „BEGIN PRIVATE KEY“ in `ios/scripts/testflight-secrets.sh`. Woher die Warnung kam (Repo, Datei), ist offen. Möglich ist auch die alte, als falscher Alarm markierte Meldung zum Basic-Header aus PR #1.
+1. **fil-o-mat mit Bild und Knöpfen.** fil-o-mat sendet seit 04.11.2026 an das Topic `filomat`, angekommen ist bisher nur die Testmeldung ohne Bild und ohne Actions. Bei der nächsten Meldung zu einem fertigen oder abgebrochenen Druck prüfen, ob das Kamera- oder Vorschaubild dabei ist, und bei „Welche Spule?“ die Knöpfe (`POST /choices/{token}` an fil-o-mat).
+2. **GitGuardian-Warnung.** Marcel hat am 04.11.2026 eine Warnung gesehen. Alle PR-Prüfungen in onkel-bummel, Slipways und fil-o-mat melden „No secrets detected“, und eine Suche in den Commits seit dem 01.11.2026 fand nur Metriknamen und die Prüfung auf „BEGIN PRIVATE KEY“ in `ios/scripts/testflight-secrets.sh`. Woher die Warnung kam (Repo, Datei), ist offen. Möglich ist auch die alte, als falscher Alarm markierte Meldung zum Basic-Header aus PR #1.
 
 ## Sicherung
 
@@ -26,7 +25,7 @@ Identity (CT 112) und Onkel Bummel (CT 106) laufen zu Hause. Fallen Strom oder I
 
 ## Builds der anderen Dienste auslagern
 
-Onkel Bummel zieht seit PR #8 fertige Images. Dasselbe ginge bei den anderen, je ein eigener PR im jeweiligen Repo:
+Onkel Bummel zieht seit PR #8 fertige Images, bestätigt am 04.11.2026 mit dem Update auf `cf957b3`. Dasselbe ginge bei den anderen, je ein eigener PR im jeweiligen Repo:
 
 - **Identity (CT 112):** baut mit `dotnet publish` direkt im LXC (`identity-update`, ohne Docker, etwa 1,5 GiB RAM beim Build). Dort eher ein fertiges `publish`-Archiv aus GitHub Actions oder gleich der Docker-Weg (siehe Ausfallsicherheit).
 - **fil-o-mat (CT 111)** und **Slipways (slipways-1)**: haben eigene Updater, die auf dem Host bauen. Muster: Workflow wie `server-image.yml` und Pull-Modus wie in `deploy/proxmox/update.sh`.
