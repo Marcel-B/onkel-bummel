@@ -141,6 +141,7 @@ Vue 3 mit TypeScript, Vite, Tailwind CSS, Pinia und Axios in `backend/web/`. Der
 - Galerie pro Topic und über alle Topics, mit Lightbox (Pfeiltasten) und Download des Originals
 - Action-Buttons mit dem letzten Ergebnis
 - Gelesen setzen (einzeln, pro Topic, alle), Löschen
+- Nachricht senden (`/senden?topic=garage`): Topic mit Vorschlägen, Titel, Text, Priorität, Tags mit Emoji-Vorschau, Link und Anhänge (auswählen, hineinziehen oder Bilder in den Text einfügen). Geht als `multipart/form-data` an `POST messages` mit einem `Idempotency-Key` pro Entwurf, damit ein zweiter Klick oder eine Wiederholung nur eine Nachricht ergibt.
 - Text als Markdown light (fett, kursiv, Code, Links), ohne HTML aus der Nachricht
 - Verwaltung (`/verwaltung`): Topics (Anzeigename, Icon, Farbe, stumm, Aufbewahrung), Publish-Tokens, eigene Geräte und ihre Abos, QR-Code mit der Server-Adresse für die App
 
