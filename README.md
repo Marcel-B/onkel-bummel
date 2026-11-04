@@ -1,6 +1,6 @@
 # Onkel Bummel
 
-Eigener Benachrichtigungsdienst mit Verlauf, Suche und Bildern, benannt nach meinem ersten Postboten. Ersetzt ntfy für Slipways, fil-o-mat und die Grafana-Alarme. Was er können soll, steht in [docs/SPEC.md](docs/SPEC.md).
+Eigener Benachrichtigungsdienst mit Verlauf, Suche und Bildern, benannt nach meinem ersten Postboten. Ersetzt ntfy für Slipways, fil-o-mat und die Grafana-Alarme. Was er können soll, steht in [docs/SPEC.md](docs/SPEC.md). Was noch offen ist: [docs/offene-punkte.md](docs/offene-punkte.md).
 
 | Teil | Stand |
 |---|---|
