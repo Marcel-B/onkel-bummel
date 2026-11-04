@@ -21,15 +21,23 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
         AppModel.shared.sync.lastError = "Keine Pushes: \(error.localizedDescription)"
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification)
-        async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+    // The completion handler variants on purpose: for the async ones, Swift calls the system's completion handler
+    // on whatever thread the task ends on, and UIKit asserts the main thread there (crash on tapping a push).
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .list, .sound])
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let content = PushContent(userInfo: response.notification.request.content.userInfo) else { return }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                            withCompletionHandler completionHandler: @escaping () -> Void) {
+        let content = PushContent(userInfo: response.notification.request.content.userInfo)
         let identifier = response.actionIdentifier
-        await PushService.handle(identifier, content: content)
+        // Called once, on the main actor, after the work is done; the closure itself is not Sendable.
+        nonisolated(unsafe) let done = completionHandler
+        Task { @MainActor in
+            if let content { await PushService.handle(identifier, content: content) }
+            done()
+        }
     }
 }
 
