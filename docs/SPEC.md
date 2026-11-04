@@ -26,7 +26,7 @@ Nicht im Umfang: mehrere Nutzer, Android, MQTT, ntfy-Kompatibilität, E-Mail/SMS
 - **Topic:** einfacher Name wie `garage`, `slipways`, `filomat`, `alarme` (`[a-z0-9_-]{1,64}`). Ein Topic entsteht mit der ersten Nachricht. Einstellbar sind Anzeigename, Icon, Farbe, Stummschaltung (kein Push) und Aufbewahrung in Tagen. Nicht erlaubt sind die Namen `api`, `auth`, `static`, `health`, `metrics` und `*`.
 - **Action:** Button an einer Nachricht mit Label und HTTP-Aufruf (Methode, URL, optional Header und Body, `clear`). Den Aufruf führt der Server aus: Er steht im Heimnetz und erreicht das Ziel immer, das Handy nicht unbedingt. Das letzte Ergebnis (Status, Zeit) wird an der Nachricht gespeichert. `clear` markiert die Nachricht danach als gelesen.
 - **Gerät:** eine iOS-Installation mit APNs-Token, Umgebung (`sandbox`/`production`) und abonnierten Topics (`*` = alle).
-- **Publish-Token:** statischer Schlüssel für Sender (Skripte, Dienste, Grafana), auf Topics beschränkt oder `*`. Er trägt 256 Zufallsbits, wird einmal angezeigt und nur als SHA-256-Hash gespeichert. Anlegen über `POST publish-tokens` oder, solange es keine Web-Oberfläche gibt, auf der Kommandozeile: `dotnet OnkelBummel.Api.dll --create-token <name> <topics>` (außerdem `--list-tokens` und `--delete-token <id>`).
+- **Publish-Token:** statischer Schlüssel für Sender (Skripte, Dienste, Grafana), auf Topics beschränkt oder `*`. Er trägt 256 Zufallsbits, wird einmal angezeigt und nur als SHA-256-Hash gespeichert. Anlegen in der Web-Oberfläche (`POST publish-tokens`) oder auf der Kommandozeile: `dotnet OnkelBummel.Api.dll --create-token <name> <topics>` (außerdem `--list-tokens` und `--delete-token <id>`).
 
 ## Senden
 
@@ -224,7 +224,7 @@ Alles in `appsettings.json`, überschreibbar per Umgebungsvariable (`Abschnitt__
 
 Der Server läuft in einem unprivilegierten LXC auf Proxmox, den `deploy/proxmox/create-lxc.sh` anlegt. Tailscale läuft im LXC selbst, der Server als Docker-Container im Host-Netz des LXC (`deploy/docker-compose.yml`) und lauscht nur auf `127.0.0.1`. `tailscale serve` stellt die App unter `https://onkel-bummel.<tailnet>.ts.net` und die Metriken unter Port 9464 bereit, beide mit gültigem Zertifikat. Ausgehend erreicht der Server über Tailscale und MagicDNS den Identity-Server, Loki und die Ziele von Actions.
 
-Neue Commits auf `main` spielt ein systemd-Timer im LXC selbst ein (`deploy/proxmox/update.sh`): erst die Tests im Docker-Build, dann das Image, dann der Neustart. Kommt die neue Version nicht gesund hoch, laufen wieder das vorige Image und die Datenbank von vor dem Update. Einzelheiten in [deploy/proxmox/README.md](../deploy/proxmox/README.md).
+Neue Commits auf `main` testet und baut GitHub Actions (`.github/workflows/server-image.yml`) und legt das Image in der GitHub Container Registry ab. Ein systemd-Timer im LXC (`deploy/proxmox/update.sh`) zieht es und startet den Server neu; mit `IMAGE_REPO=` baut der LXC wie früher selbst. Kommt die neue Version nicht gesund hoch, laufen wieder das vorige Image und die Datenbank von vor dem Update. Einzelheiten in [deploy/proxmox/README.md](../deploy/proxmox/README.md).
 
 ## Umstellung der bisherigen ntfy-Sender
 
