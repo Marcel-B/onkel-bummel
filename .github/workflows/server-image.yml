@@ -1,0 +1,57 @@
+name: Server image
+
+# Tests and builds the server image. Every push to main gets an image tagged with its commit, even when the commit
+# does not touch the server: the updater in the LXC (deploy/proxmox/update.sh) pulls the image of the newest commit.
+# Pull requests and runs on other branches only test and build, nothing is pushed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: [backend/**, .github/workflows/server-image.yml]
+  workflow_dispatch:
+
+concurrency:
+  group: server-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/marcel-b/onkel-bummel
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: test
+          platforms: linux/amd64
+          outputs: type=cacheonly
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          target: final
+          platforms: linux/amd64
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE }}:sha-${{ github.sha }}
+            ${{ env.IMAGE }}:main
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha

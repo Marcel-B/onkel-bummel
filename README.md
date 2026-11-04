@@ -88,7 +88,7 @@ swift test
 
 ## Betrieb
 
-Onkel Bummel läuft in einem LXC auf Proxmox, erreichbar nur im Tailnet unter `https://onkel-bummel.<tailnet>.ts.net`, die Metriken unter Port 9464. Neue Commits auf `main` spielt der LXC selbst ein, nach bestandenen Tests und mit Rücknahme, wenn die neue Version nicht hochkommt.
+Onkel Bummel läuft in einem LXC auf Proxmox, erreichbar nur im Tailnet unter `https://onkel-bummel.<tailnet>.ts.net`, die Metriken unter Port 9464. Neue Commits auf `main` testet und baut GitHub Actions ([server-image.yml](.github/workflows/server-image.yml)), der LXC zieht das fertige Image und nimmt es zurück, wenn die neue Version nicht hochkommt.
 
 ```bash
 # in der Proxmox-Shell als root

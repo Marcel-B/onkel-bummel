@@ -16,6 +16,14 @@ main() {
     REPO_URL="${REPO_URL:-$(git -C "$REPO_DIR" remote get-url origin)}"
     REPO_BRANCH="${REPO_BRANCH:-main}"
     GIT_TOKEN="${GIT_TOKEN:-}"
+    # Leer: der LXC baut das Image selbst; nicht gesetzt: wie bisher in source.env, sonst die Registry von GitHub Actions
+    if [[ -z ${IMAGE_REPO+set} ]]; then
+        if grep -q '^IMAGE_REPO=' "$CONF_DIR/source.env" 2>/dev/null; then
+            IMAGE_REPO="$(sed -n 's/^IMAGE_REPO=//p' "$CONF_DIR/source.env")"
+        else
+            IMAGE_REPO=ghcr.io/marcel-b/onkel-bummel
+        fi
+    fi
     AUTO_UPDATE="${AUTO_UPDATE:-1}"
     UPDATE_INTERVAL="${UPDATE_INTERVAL:-5min}"
 
@@ -111,6 +119,7 @@ REPO_URL=$REPO_URL
 REPO_BRANCH=$REPO_BRANCH
 GIT_TOKEN=$GIT_TOKEN
 SRC_DIR=$REPO_DIR
+IMAGE_REPO=$IMAGE_REPO
 EOF
     mv "$CONF_DIR/source.env.new" "$CONF_DIR/source.env"
 
@@ -141,7 +150,11 @@ WantedBy=timers.target
 EOF
     systemctl daemon-reload
 
-    info "Server bauen und starten (beim ersten Mal einige Minuten)"
+    if [[ -n $IMAGE_REPO ]]; then
+        info "Server aus $IMAGE_REPO holen und starten"
+    else
+        info "Server bauen und starten (beim ersten Mal einige Minuten)"
+    fi
     /usr/local/bin/onkel-bummel-update
 
     if [[ $AUTO_UPDATE == 1 ]]; then
@@ -157,6 +170,7 @@ EOF
     echo "  Einstellungen:  $CONF_DIR/onkel-bummel.env"
     if [[ $AUTO_UPDATE == 1 ]]; then
         echo "  Updates:        alle $UPDATE_INTERVAL von $REPO_BRANCH, Log: journalctl -u onkel-bummel-update"
+        echo "  Images:         ${IMAGE_REPO:-im LXC gebaut}"
     else
         echo "  Updates:        von Hand mit onkel-bummel-update"
     fi
