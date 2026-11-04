@@ -1,6 +1,6 @@
 # Onkel Bummel auf Proxmox (LXC)
 
-`create-lxc.sh` legt auf dem Proxmox-Host einen unprivilegierten Debian-LXC an. Darin laufen Docker und Tailscale, der Server als Docker-Container und ein Timer, der neue Commits auf `main` selbst einspielt. Danach ist Onkel Bummel unter `https://onkel-bummel.<tailnet>.ts.net` erreichbar, nur im Tailnet.
+`create-lxc.sh` legt auf dem Proxmox-Host einen unprivilegierten Debian-LXC an. Darin laufen Docker und Tailscale, der Server als Docker-Container und ein Timer, der neue Commits auf `main` selbst einspielt. Getestet und gebaut wird auf GitHub Actions, der LXC zieht nur das fertige Image. Danach ist Onkel Bummel unter `https://onkel-bummel.<tailnet>.ts.net` erreichbar, nur im Tailnet.
 
 ## Vorher
 
@@ -23,11 +23,12 @@ Das Skript holt das Repository in den LXC und ruft dort `setup.sh` auf. Am Ende 
 | `CT_HOSTNAME` | `onkel-bummel` | Hostname, auch der Name im Tailnet |
 | `STORAGE` / `TEMPLATE_STORAGE` | `local-lvm` / `local` | Speicher für Disk und Debian-Vorlage |
 | `BRIDGE`, `IP`, `GATEWAY` | `vmbr0`, `dhcp` | z. B. `IP=192.168.1.50/24 GATEWAY=192.168.1.1` |
-| `CORES` / `MEMORY` / `DISK` | `2` / `2048` / `12` | Ressourcen; der Build braucht etwa 1,5 GiB RAM |
+| `CORES` / `MEMORY` / `DISK` | `2` / `1024` / `8` | Ressourcen; baut der LXC selbst, `2048` / `12`, der Build braucht etwa 1,5 GiB RAM |
 | `SSH_PUBLIC_KEY_FILE` | – | optional, für SSH als root |
 | `TS_AUTHKEY` | – | Auth Key fürs Tailnet (`tskey-auth-…`) |
 | `REPO_URL` / `REPO_BRANCH` | `https://github.com/Marcel-B/onkel-bummel.git` / `main` | Quelle der Updates |
 | `GIT_TOKEN` | – | nur bei privatem Repository |
+| `IMAGE_REPO` | `ghcr.io/marcel-b/onkel-bummel` | woher die fertigen Images kommen; leer (`IMAGE_REPO=`): der LXC baut selbst, etwa für einen Fork ohne eigene Images |
 | `AUTO_UPDATE` / `UPDATE_INTERVAL` | `1` / `5min` | neue Commits automatisch einspielen, wie oft nachsehen |
 | `OIDC_ISSUER` | `https://identity.<tailnet>.ts.net` | Identity-Server |
 | `OIDC_WEB_CLIENT_SECRET` | – | Secret von `onkel-bummel-web`, geht auch später |
@@ -40,7 +41,7 @@ Das Skript holt das Repository in den LXC und ruft dort `setup.sh` auf. Am Ende 
 |---|---|
 | Einstellungen (`Abschnitt__Schlüssel`) | `/etc/onkel-bummel/onkel-bummel.env` |
 | APNs-Schlüssel | `/etc/onkel-bummel/secrets/apns.p8` (`chown root:1654`, `chmod 640`) |
-| Repository und Token für Updates | `/etc/onkel-bummel/source.env` (nur root) |
+| Repository, Token und Image-Quelle für Updates | `/etc/onkel-bummel/source.env` (nur root) |
 | Datenbank und Anhänge | `/var/lib/onkel-bummel` |
 | Checkout | `/opt/onkel-bummel` |
 
@@ -52,12 +53,15 @@ pct exec <CTID> -- docker compose -f /opt/onkel-bummel/deploy/docker-compose.yml
 
 ## Updates
 
+Jeder Push auf `main` läuft durch den Workflow [server-image.yml](../../.github/workflows/server-image.yml): Tests (Stage `test` im `backend/Dockerfile`), dann das Image, als `ghcr.io/marcel-b/onkel-bummel:sha-<commit>` und `:main` in die GitHub Container Registry. Schlagen die Tests fehl, gibt es kein Image.
+
 `onkel-bummel-update.timer` sieht alle 5 Minuten nach, ob es auf `main` einen neuen Commit gibt. GitHub muss den LXC dafür nicht erreichen. Für einen neuen Commit:
 
-1. Commit holen und die Tests im Docker-Build ausführen (Stage `test` im `backend/Dockerfile`). Scheitern sie, läuft die bisherige Version weiter.
-2. Image bauen. Scheitert der Build, läuft die bisherige Version weiter.
-3. Datenbank sichern (SQLite-Online-Backup) und den Container neu starten.
-4. Antwortet `/health` nach 90 Sekunden nicht, kommen das vorige Image und die gesicherte Datenbank zurück. Nachrichten aus diesen Minuten gehen dabei verloren.
+1. Image des Commits ziehen. Gibt es das noch nicht (CI läuft noch oder die Tests sind rot), läuft die bisherige Version weiter, und der nächste Lauf versucht es wieder.
+2. Datenbank sichern (SQLite-Online-Backup) und den Container neu starten.
+3. Antwortet `/health` nach 90 Sekunden nicht, kommen das vorige Image und die gesicherte Datenbank zurück. Nachrichten aus diesen Minuten gehen dabei verloren.
+
+Mit `IMAGE_REPO=` in `/etc/onkel-bummel/source.env` baut der LXC wie früher selbst: Tests im Docker-Build, dann das Image. Das braucht etwa 1,5 GiB RAM und mehrere GiB Build-Cache.
 
 Ein gescheiterter Commit wird nicht bei jedem Lauf neu versucht, erst der nächste Commit oder ein Aufruf von Hand.
 

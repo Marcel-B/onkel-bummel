@@ -19,8 +19,15 @@ BRIDGE="${BRIDGE:-vmbr0}"
 IP="${IP:-dhcp}"                                  # oder z. B. 192.168.1.50/24
 GATEWAY="${GATEWAY:-}"                            # nur bei fester IP nötig
 CORES="${CORES:-2}"
-MEMORY="${MEMORY:-2048}"                          # MiB; der Build braucht etwa 1,5 GiB
-DISK="${DISK:-12}"                                # GiB; Images und Build-Cache brauchen etwa 4 GiB
+# Fertige Images aus der Registry, gebaut von GitHub Actions; leer (IMAGE_REPO=): der LXC baut selbst
+IMAGE_REPO="${IMAGE_REPO-ghcr.io/marcel-b/onkel-bummel}"
+if [[ -n $IMAGE_REPO ]]; then
+    MEMORY="${MEMORY:-1024}"                      # MiB
+    DISK="${DISK:-8}"                             # GiB
+else
+    MEMORY="${MEMORY:-2048}"                      # MiB; der Build braucht etwa 1,5 GiB
+    DISK="${DISK:-12}"                            # GiB; Images und Build-Cache brauchen etwa 4 GiB
+fi
 SSH_PUBLIC_KEY_FILE="${SSH_PUBLIC_KEY_FILE:-}"    # optional, für SSH als root
 
 TS_AUTHKEY="${TS_AUTHKEY:-}"                      # tskey-auth-...; leer: Anmeldung über den angezeigten Link
@@ -132,7 +139,7 @@ fi
 # Alles Weitere läuft im LXC, damit es sich dort auch ohne Proxmox-Shell wiederholen lässt
 pct exec "$CTID" -- env \
     CT_HOSTNAME="$CT_HOSTNAME" TS_AUTHKEY="$TS_AUTHKEY" \
-    REPO_URL="$REPO_URL" REPO_BRANCH="$REPO_BRANCH" GIT_TOKEN="$GIT_TOKEN" \
+    REPO_URL="$REPO_URL" REPO_BRANCH="$REPO_BRANCH" GIT_TOKEN="$GIT_TOKEN" IMAGE_REPO="$IMAGE_REPO" \
     AUTO_UPDATE="$AUTO_UPDATE" UPDATE_INTERVAL="$UPDATE_INTERVAL" \
     OIDC_ISSUER="$OIDC_ISSUER" OIDC_WEB_CLIENT_SECRET="$OIDC_WEB_CLIENT_SECRET" \
     APNS_KEY_ID="$APNS_KEY_ID" APNS_TEAM_ID="$APNS_TEAM_ID" LOKI_URL="$LOKI_URL" \

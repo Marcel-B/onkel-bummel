@@ -17,7 +17,8 @@ COPY src/ src/
 COPY --from=web /src/src/OnkelBummel.Api/wwwroot src/OnkelBummel.Api/wwwroot
 RUN dotnet publish src/OnkelBummel.Api/OnkelBummel.Api.csproj -c Release -o /app --no-restore
 
-# Only built on request (docker build --target test); the update in the LXC deploys a commit only when this passes.
+# Only built on request (docker build --target test). CI (server-image.yml) pushes an image only when this passes,
+# and the LXC builds it itself only without IMAGE_REPO (deploy/proxmox/update.sh).
 FROM build AS test
 COPY OnkelBummel.slnx ./
 COPY tests/ tests/
