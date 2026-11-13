@@ -93,6 +93,7 @@ Erlaubt mit einem Access Token vom Identity-Server (iOS-App) oder dem Session-Co
 |---|---|
 | `GET messages?topics=a,b&q=&unread=1&has_image=1&min_priority=&tags=a,b&since=&until=&before=<id>&after=<id>&limit=50` | Verlauf als `{"messages": […], "hasMore": …}`, neueste zuerst; mit `after` (ohne `before`) älteste zuerst, damit man mit der letzten ID weiterblättern kann. `q` ist eine Volltextsuche über Titel, Text und Tags (jedes Wort als Präfix). `min_priority` 1–5, `tags` müssen alle an der Nachricht hängen, `since` (einschließlich) und `until` (ausschließlich) sind Zeitpunkte in ISO 8601. `limit` 1–200 |
 | `GET messages/{id}`, `DELETE messages/{id}` | eine Nachricht; Löschen entfernt auch die Dateien |
+| `POST messages/delete` | mehrere Nachrichten auf einmal löschen: `{"ids": […]}` mit 1 bis 500 IDs, schon gelöschte werden übersprungen; Antwort `{"count"}`, live ein `deleted` je Nachricht |
 | `POST messages/{id}/read`, `POST messages/read` | gelesen setzen, einzeln oder gesammelt: `{"topic": …, "upToId": …}`, beides optional; ohne `upToId` alles, was es gerade gibt |
 | `POST messages/{id}/actions/{index}` | Action ausführen; Antwort `{"index", "status", "ok", "runAt", "markedRead"}`, `status` 0 heißt: Ziel nicht erreicht |
 | `GET topics`, `PATCH topics/{name}` | Topics mit Anzahl gesamt/ungelesen und letzter Nachricht, zuletzt aktive zuerst; Einstellungen ändern (`displayName`, `icon`, `color` als `#rrggbb`, `muted`, `retentionDays`; nur die mitgeschickten Felder, `null` löscht) |
@@ -147,7 +148,7 @@ Vue 3 mit TypeScript, Vite, Tailwind CSS, Pinia und Axios in `backend/web/`. Der
 - Suche und Filter: Topic, Mindestpriorität, Tags, Zeitraum, nur ungelesen, nur mit Bildern; der Filter steht in der Adresse (`/topics/garage?q=tor&prio=4&tags=a,b&von=2026-11-01&bis=2026-11-03&ungelesen=1&bilder=1`)
 - Galerie pro Topic und über alle Topics, mit Lightbox (Pfeiltasten) und Download des Originals
 - Action-Buttons mit dem letzten Ergebnis
-- Gelesen setzen (einzeln, pro Topic, alle), Löschen
+- Gelesen setzen (einzeln, pro Topic, alle), Löschen (einzeln oder über „Auswählen“ mehrere, auch alle geladenen der Liste)
 - Nachricht senden (`/senden?topic=garage`): Topic mit Vorschlägen, Titel, Text, Priorität, Tags mit Emoji-Vorschau, Link und Anhänge (auswählen, hineinziehen oder Bilder in den Text einfügen). Geht als `multipart/form-data` an `POST messages` mit einem `Idempotency-Key` pro Entwurf, damit ein zweiter Klick oder eine Wiederholung nur eine Nachricht ergibt.
 - Text als Markdown light (fett, kursiv, Code, Links), ohne HTML aus der Nachricht
 - Verwaltung (`/verwaltung`): Topics (Anzeigename, Icon, Farbe, stumm, Aufbewahrung), Publish-Tokens, eigene Geräte und ihre Abos, QR-Code mit der Server-Adresse für die App
@@ -163,6 +164,7 @@ SwiftUI ab iOS 17, in `ios/` (Xcode-Projekt aus `project.yml` mit XcodeGen, Logi
 - Notification Service Extension: hängt das Thumbnail über den signierten Link an (nach 5 Sekunden ohne Antwort nur Text) und legt eine Kategorie mit „Gelesen“, den Actions der Nachricht und „Öffnen“ an; Nachrichten mit denselben Labels teilen sich eine Kategorie.
 - Aktionen in der Mitteilung: „Gelesen“, „Öffnen“ und die Actions der Nachricht. Die App führt sie im Hintergrund über die API aus.
 - Wischgesten (gelesen, löschen; bei Topics gelesen, stumm), Badge = Anzahl ungelesen
+- „Auswählen“ in Inbox und Timeline: mehrere oder alle Nachrichten der Liste markieren und auf einmal löschen
 - Alles außer dem Push-Text braucht Tailscale, am besten auf „On Demand“
 - **Demo ohne Server** (für das App Review und zum Ausprobieren): „Ohne Server ausprobieren“ bei der Einrichtung. `DemoServer` in `OnkelBummelKit` beantwortet dieselbe API mit Beispieldaten im Speicher, über ein `URLProtocol` unter `https://demo.onkel-bummel.invalid/`; nichts geht ins Netz, keine Anmeldung, kein Gerät, kein SSE. Bilder zeichnet die App selbst („Beispielbild“). In den Einstellungen schickt „Beispielnachricht senden“ eine neue Nachricht und nach 5 Sekunden eine lokale Mitteilung dazu. Die Demo bleibt nach einem Neustart an und beginnt dann wieder mit den Beispieldaten; „Demo beenden“ führt zurück zur Einrichtung.
 - Datenschutz und Impressum auf marcelbenders.com sind bei der Einrichtung und in den Einstellungen verlinkt. `PrivacyInfo.xcprivacy` in App und Extension: kein Tracking, keine erfassten Daten, `UserDefaults` mit den Gründen `CA92.1` (App) und `1C8F.1` (App Group).

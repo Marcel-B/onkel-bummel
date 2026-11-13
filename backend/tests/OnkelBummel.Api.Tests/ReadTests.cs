@@ -106,6 +106,27 @@ public sealed class MessageReadTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Deletes_several_messages_at_once_with_their_files()
+    {
+        var picture = await SendAsync("kamera", "Bewegung", image: true);
+        var door = await SendAsync("garage", "Tür offen");
+        var kept = await SendAsync("garage", "Tür zu");
+
+        var response = await _user.PostAsJsonAsync("/api/v1/messages/delete", new { ids = new[] { picture, door, door, 999_999 } }, CancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<DeleteMessagesResult>(CancellationToken);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, result!.Count);
+        Assert.Equal([kept], await IdsAsync(""));
+        Assert.Empty(Directory.EnumerateFiles(Path.Combine(_factory.DataPath, "attachments"), "*", SearchOption.AllDirectories));
+        await using (var db = _factory.CreateDbContext())
+            Assert.Equal(0, await db.Attachments.CountAsync(CancellationToken));
+        Assert.Equal(HttpStatusCode.BadRequest, (await _user.PostAsJsonAsync("/api/v1/messages/delete", new { ids = Array.Empty<long>() }, CancellationToken)).StatusCode);
+        var tooMany = Enumerable.Range(1, MessageEndpoints.MaxDeleteIds + 1).Select(i => (long)i).ToArray();
+        Assert.Equal(HttpStatusCode.BadRequest, (await _user.PostAsJsonAsync("/api/v1/messages/delete", new { ids = tooMany }, CancellationToken)).StatusCode);
+    }
+
+    [Fact]
     public async Task Marks_one_a_topic_or_everything_as_read()
     {
         var a = await SendAsync("garage", "a");

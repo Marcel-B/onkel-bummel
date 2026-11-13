@@ -6,6 +6,8 @@ import { matchesLive } from '@/lib/filter'
 import { useTopicsStore } from './topics'
 
 const pageSize = 50
+/** At most this many ids per request to POST messages/delete. */
+const deleteBatch = 500
 
 /** The list on screen (timeline or gallery): one filter at a time, newest first, older pages on demand. */
 export const useMessagesStore = defineStore('messages', () => {
@@ -108,6 +110,16 @@ export const useMessagesStore = defineStore('messages', () => {
     useTopicsStore().reloadSoon()
   }
 
+  /** Deletes the chosen messages, in batches the server accepts. */
+  async function removeMany(ids: number[]) {
+    for (let start = 0; start < ids.length; start += deleteBatch) {
+      const batch = ids.slice(start, start + deleteBatch)
+      await api.deleteMessages(batch)
+      messages.value = messages.value.filter((m) => !batch.includes(m.id))
+    }
+    useTopicsStore().reloadSoon()
+  }
+
   async function runAction(message: Message, index: number) {
     const result = await api.runAction(message.id, index)
     const action = message.actions.find((a) => a.index === index)
@@ -124,6 +136,6 @@ export const useMessagesStore = defineStore('messages', () => {
 
   return {
     filter, messages, hasMore, loading, error, pendingNew,
-    load, loadMore, reload, onMessage, onRead, onDeleted, markRead, markAllRead, remove, runAction,
+    load, loadMore, reload, onMessage, onRead, onDeleted, markRead, markAllRead, remove, removeMany, runAction,
   }
 })

@@ -246,6 +246,26 @@ final class SyncService {
         }
     }
 
+    /// Deletes several messages: from the cache right away, on the server in batches it accepts.
+    func delete(_ ids: [Int64]) async {
+        guard !ids.isEmpty else { return }
+        for id in ids {
+            guard let cached = context.cachedMessage(id) else { continue }
+            if cached.readAt == nil { adjustUnread(topic: cached.topic, by: -1) }
+            context.delete(cached)
+        }
+        try? context.save()
+        do {
+            guard let api = api() else { return }
+            for start in stride(from: 0, to: ids.count, by: APIClient.maxDeleteIds) {
+                try await api.deleteMessages(Array(ids[start..<min(start + APIClient.maxDeleteIds, ids.count)]))
+            }
+            try await refreshTopics(api)
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     func runAction(messageId: Int64, index: Int) async throws -> ActionRunResult {
         guard let api = api() else { throw APIError.notSignedIn }
         let result = try await api.runAction(messageId: messageId, index: index)

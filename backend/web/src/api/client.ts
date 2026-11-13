@@ -87,6 +87,10 @@ export const api = {
   async deleteMessage(id: number) {
     await http.delete(`/messages/${id}`)
   },
+  /** Deletes several messages; the ones gone already are skipped. */
+  async deleteMessages(ids: number[]) {
+    return (await http.post<{ count: number }>('/messages/delete', { ids })).data.count
+  },
   async markRead(id: number) {
     await http.post(`/messages/${id}/read`)
   },

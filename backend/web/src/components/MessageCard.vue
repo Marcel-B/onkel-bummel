@@ -12,8 +12,8 @@ import { useTopicsStore } from '@/stores/topics'
 import MessageText from './MessageText.vue'
 import TopicIcon from './TopicIcon.vue'
 
-const props = defineProps<{ message: Message; showTopic: boolean }>()
-const emit = defineEmits<{ openImage: [attachment: Attachment] }>()
+const props = defineProps<{ message: Message; showTopic: boolean; selecting?: boolean; selected?: boolean }>()
+const emit = defineEmits<{ openImage: [attachment: Attachment]; toggle: [] }>()
 
 const store = useMessagesStore()
 const topics = useTopicsStore()
@@ -61,10 +61,18 @@ const priorityClass: Record<number, string> = {
 <template>
   <article
     class="card relative overflow-hidden p-4"
-    :class="unread && 'border-l-4 border-l-amber-500 dark:border-l-amber-500'"
+    :class="[unread && 'border-l-4 border-l-amber-500 dark:border-l-amber-500', selected && 'ring-2 ring-amber-500']"
     :aria-label="message.title ?? message.message.slice(0, 80)"
   >
     <header class="mb-1 flex items-start gap-2">
+      <input
+        v-if="selecting"
+        type="checkbox"
+        class="mt-1 size-4 shrink-0 accent-amber-600"
+        :checked="selected"
+        :aria-label="`Auswählen: ${message.title ?? message.message.slice(0, 80)}`"
+        @change="emit('toggle')"
+      />
       <RouterLink
         v-if="showTopic"
         :to="{ name: 'topic', params: { topic: message.topic } }"
@@ -94,7 +102,7 @@ const priorityClass: Record<number, string> = {
           <span v-if="message.source !== 'api'">· {{ message.source }}</span>
         </div>
       </div>
-      <div class="-mt-1 -mr-1 flex shrink-0">
+      <div v-if="!selecting" class="-mt-1 -mr-1 flex shrink-0">
         <button v-if="unread" class="btn-icon" title="Als gelesen markieren" :disabled="!!busy" @click="run('read', () => store.markRead(message))">
           <LoaderCircle v-if="busy === 'read'" class="size-4 animate-spin" />
           <Check v-else class="size-4" />
