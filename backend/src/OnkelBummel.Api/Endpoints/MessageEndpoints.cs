@@ -17,10 +17,16 @@ public sealed record MarkReadRequest(string? Topic, long? UpToId);
 
 public sealed record MarkReadResult(int Count);
 
+/// <param name="Ids">Messages to delete; ones that are gone already are skipped.</param>
+public sealed record DeleteMessagesRequest(long[]? Ids);
+
+public sealed record DeleteMessagesResult(int Count);
+
 public static class MessageEndpoints
 {
     public const int DefaultLimit = 50;
     public const int MaxLimit = 200;
+    public const int MaxDeleteIds = 500;
 
     public static RouteGroupBuilder MapMessageEndpoints(this RouteGroupBuilder api)
     {
@@ -29,6 +35,7 @@ public static class MessageEndpoints
         messages.MapGet("/", ListAsync).WithSummary("History, newest first; with after= oldest first");
         messages.MapGet("/{id:long}", GetAsync);
         messages.MapDelete("/{id:long}", DeleteAsync);
+        messages.MapPost("/delete", DeleteManyAsync).WithSummary("Delete several messages at once");
         messages.MapPost("/{id:long}/read", MarkReadAsync);
         messages.MapPost("/read", MarkAllReadAsync).WithSummary("Mark a topic or everything as read");
         messages.MapPost("/{id:long}/actions/{index:int}", RunActionAsync).WithSummary("Run an action button");
@@ -114,6 +121,27 @@ public static class MessageEndpoints
             store.Delete(attachment);
         events.Publish(new LiveEvent(MessageEvents.DeletedType, message.Topic, new DeletedEvent(id, message.Topic)));
         return TypedResults.NoContent();
+    }
+
+    private static async Task<IResult> DeleteManyAsync(
+        DeleteMessagesRequest? request, OnkelBummelDbContext db, AttachmentStore store, MessageEvents events,
+        CancellationToken cancellationToken)
+    {
+        var ids = (request?.Ids ?? []).Distinct().ToList();
+        if (ids.Count is < 1 or > MaxDeleteIds)
+            return Problems.BadRequest($"„ids“ braucht 1 bis {MaxDeleteIds} Nachrichten.");
+
+        var found = await db.Messages.Include(m => m.Attachments).Where(m => ids.Contains(m.Id)).ToListAsync(cancellationToken);
+        db.Messages.RemoveRange(found);
+        await db.SaveChangesAsync(cancellationToken);
+        foreach (var message in found)
+        {
+            foreach (var attachment in message.Attachments)
+                store.Delete(attachment);
+            // One event per message, like a single delete, so every client understands it.
+            events.Publish(new LiveEvent(MessageEvents.DeletedType, message.Topic, new DeletedEvent(message.Id, message.Topic)));
+        }
+        return TypedResults.Ok(new DeleteMessagesResult(found.Count));
     }
 
     private static async Task<IResult> MarkReadAsync(

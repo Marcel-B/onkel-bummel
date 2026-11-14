@@ -108,6 +108,15 @@ public final class DemoServer: @unchecked Sendable {
             let limit = request?.upToId ?? .max
             let count = markRead { $0.id <= limit && (request?.topic == nil || $0.topic == request?.topic) }
             return json(MarkReadResult(count: count))
+        case ("POST", 2, "messages", "delete", _):
+            struct Body: Decodable { var ids: [Int64] }
+            guard let ids = body.flatMap({ try? JSON.decoder.decode(Body.self, from: $0) })?.ids,
+                  (1...APIClient.maxDeleteIds).contains(ids.count) else {
+                return problem(400, "„ids“ braucht 1 bis \(APIClient.maxDeleteIds) Nachrichten.")
+            }
+            let before = messages.count
+            messages.removeAll { ids.contains($0.id) }
+            return json(DeleteMessagesResult(count: before - messages.count))
         case let ("GET", 2, "messages", id, _):
             guard let message = messages.first(where: { String($0.id) == id }) else { return problem(404, "Nachricht nicht gefunden.") }
             return json(message)

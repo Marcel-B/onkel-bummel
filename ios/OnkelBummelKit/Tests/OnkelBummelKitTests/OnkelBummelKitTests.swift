@@ -181,6 +181,20 @@ import Testing
         #expect(try #require(topics.first { $0.name == "drucker" }).unread > 0)
     }
 
+    @Test func deletesSeveralMessagesAtOnce() throws {
+        let server = DemoServer()
+        let page: MessagePage = try get(server, "/api/v1/messages?topics=garage&limit=50")
+        let ids = page.messages.prefix(2).map(\.id)
+        #expect(ids.count == 2)
+
+        let result: DeleteMessagesResult = try get(server, "/api/v1/messages/delete", method: "POST",
+                                                   body: #"{"ids":[\#(ids[0]),\#(ids[1]),999999]}"#)
+        #expect(result.count == 2)
+        let after: MessagePage = try get(server, "/api/v1/messages?topics=garage&limit=50")
+        #expect(after.messages.allSatisfy { !ids.contains($0.id) })
+        #expect(try send(server, "/api/v1/messages/delete", method: "POST", body: #"{"ids":[]}"#).status == 400)
+    }
+
     @Test func actionsAnswerAndMarkRead() throws {
         let server = DemoServer()
         let page: MessagePage = try get(server, "/api/v1/messages?limit=50")

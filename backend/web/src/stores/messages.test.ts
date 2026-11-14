@@ -1,4 +1,5 @@
 import { createPinia, setActivePinia } from 'pinia'
+import { api } from '@/api/client'
 import type { Message } from '@/api/types'
 import { useMessagesStore } from './messages'
 
@@ -53,5 +54,26 @@ describe('live events in the list', () => {
     store.onDeleted({ id: 2, topic: 'garage' })
 
     expect(store.messages.map((m) => m.id)).toEqual([1])
+  })
+})
+
+describe('deleting several messages', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+  afterEach(() => vi.restoreAllMocks())
+
+  it('sends the ids in batches of 500 and drops them from the list', async () => {
+    const store = useMessagesStore()
+    store.messages = Array.from({ length: 600 }, (_, i) => message(600 - i))
+    const sent: number[][] = []
+    vi.spyOn(api, 'deleteMessages').mockImplementation(async (ids) => {
+      sent.push(ids)
+      return ids.length
+    })
+    vi.spyOn(api, 'topics').mockResolvedValue([])
+
+    await store.removeMany(store.messages.slice(0, 550).map((m) => m.id))
+
+    expect(sent.map((ids) => ids.length)).toEqual([500, 50])
+    expect(store.messages.map((m) => m.id)).toEqual(Array.from({ length: 50 }, (_, i) => 50 - i))
   })
 })

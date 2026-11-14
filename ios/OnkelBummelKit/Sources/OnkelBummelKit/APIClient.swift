@@ -103,6 +103,16 @@ public struct APIClient: Sendable {
         try await sendEmpty("DELETE", "messages/\(id)")
     }
 
+    /// At most this many ids per call to `deleteMessages`.
+    public static let maxDeleteIds = 500
+
+    /// Deletes several messages at once; ones that are gone already are skipped.
+    @discardableResult
+    public func deleteMessages(_ ids: [Int64]) async throws -> DeleteMessagesResult {
+        struct Body: Encodable { var ids: [Int64] }
+        return try await send("POST", "messages/delete", body: Body(ids: ids))
+    }
+
     public func markRead(_ id: Int64) async throws {
         try await sendEmpty("POST", "messages/\(id)/read")
     }

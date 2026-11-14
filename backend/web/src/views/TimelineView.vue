@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { BellOff, CheckCheck, Images, LoaderCircle, RefreshCw } from 'lucide-vue-next'
+import { BellOff, CheckCheck, Images, ListChecks, LoaderCircle, RefreshCw, Trash2, X } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { errorText } from '@/api/client'
@@ -62,6 +62,55 @@ async function markAllRead() {
   }
 }
 
+// Selecting messages to delete several at once; only what is loaded can be chosen.
+const selecting = ref(false)
+const selected = ref(new Set<number>())
+const deleting = ref(false)
+const allSelected = computed(() => store.messages.length > 0 && store.messages.every((m) => selected.value.has(m.id)))
+
+function startSelecting() {
+  selected.value = new Set()
+  selecting.value = true
+}
+function stopSelecting() {
+  selecting.value = false
+  selected.value = new Set()
+}
+function toggle(id: number) {
+  const next = new Set(selected.value)
+  if (!next.delete(id)) next.add(id)
+  selected.value = next
+}
+function toggleAll() {
+  selected.value = allSelected.value ? new Set() : new Set(store.messages.map((m) => m.id))
+}
+async function deleteSelected() {
+  const ids = store.messages.filter((m) => selected.value.has(m.id)).map((m) => m.id)
+  if (ids.length === 0) return
+  const what = ids.length === 1 ? 'Eine Nachricht' : `${ids.length} Nachrichten`
+  if (!confirm(`${what} mit ihren Anhängen löschen?`)) return
+  deleting.value = true
+  actionError.value = ''
+  try {
+    await store.removeMany(ids)
+    stopSelecting()
+  } catch (e) {
+    actionError.value = errorText(e)
+  } finally {
+    deleting.value = false
+  }
+}
+
+// Another filter or topic starts over; messages deleted elsewhere drop out of the selection.
+watch(filter, stopSelecting)
+watch(
+  () => store.messages,
+  (messages) => {
+    const ids = new Set(messages.map((m) => m.id))
+    if ([...selected.value].some((id) => !ids.has(id))) selected.value = new Set([...selected.value].filter((id) => ids.has(id)))
+  },
+)
+
 // The lightbox steps through all images of the messages on screen.
 const lightboxItems = computed<LightboxItem[]>(() =>
   store.messages.flatMap((message) => message.attachments.filter((a) => a.thumbnailUrl).map((attachment) => ({ attachment, message }))),
@@ -83,6 +132,9 @@ function openImage(attachment: Attachment) {
         <RouterLink v-if="props.topic" :to="{ name: 'gallery', params: { topic: props.topic } }" class="btn">
           <Images class="size-4" /> Galerie
         </RouterLink>
+        <button class="btn" :disabled="store.messages.length === 0 || selecting" @click="startSelecting">
+          <ListChecks class="size-4" /> Auswählen
+        </button>
         <button class="btn" :disabled="unread === 0 || markingAll" @click="markAllRead">
           <LoaderCircle v-if="markingAll" class="size-4 animate-spin" />
           <CheckCheck v-else class="size-4" />
@@ -92,6 +144,32 @@ function openImage(attachment: Attachment) {
     </div>
 
     <FilterBar :filter="filter" class="mb-4" @change="changeFilter" />
+
+    <div
+      v-if="selecting"
+      class="card sticky top-2 z-[2] mb-4 flex flex-wrap items-center gap-2 px-3 py-2"
+      role="toolbar"
+      aria-label="Auswahl"
+    >
+      <span class="text-sm font-medium">{{ selected.size }} ausgewählt</span>
+      <button class="btn" @click="toggleAll">
+        {{ allSelected ? 'Keine' : store.hasMore ? `Alle geladenen (${store.messages.length})` : 'Alle' }}
+      </button>
+      <div class="ml-auto flex gap-2">
+        <button
+          class="btn text-red-700 hover:!bg-red-50 dark:text-red-400 dark:hover:!bg-red-500/10"
+          :disabled="selected.size === 0 || deleting"
+          @click="deleteSelected"
+        >
+          <LoaderCircle v-if="deleting" class="size-4 animate-spin" />
+          <Trash2 v-else class="size-4" />
+          Löschen
+        </button>
+        <button class="btn-icon" title="Auswahl beenden" :disabled="deleting" @click="stopSelecting">
+          <X class="size-4" />
+        </button>
+      </div>
+    </div>
     <p v-if="filter.q" class="mb-3 text-sm text-stone-500">Suche nach „{{ filter.q }}“</p>
     <p v-if="actionError" class="mb-3 text-sm text-red-600" role="alert">{{ actionError }}</p>
 
@@ -112,7 +190,16 @@ function openImage(attachment: Attachment) {
         {{ group.day }}
       </h2>
       <div class="space-y-2">
-        <MessageCard v-for="message in group.messages" :key="message.id" :message="message" :show-topic="!props.topic" @open-image="openImage" />
+        <MessageCard
+          v-for="message in group.messages"
+          :key="message.id"
+          :message="message"
+          :show-topic="!props.topic"
+          :selecting="selecting"
+          :selected="selected.has(message.id)"
+          @open-image="openImage"
+          @toggle="toggle(message.id)"
+        />
       </div>
     </section>
 

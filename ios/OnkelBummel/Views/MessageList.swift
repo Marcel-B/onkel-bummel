@@ -3,11 +3,15 @@ import SwiftData
 import SwiftUI
 
 /// Cached messages, newest first, with swipe actions and paging back on reaching the end.
+/// "Auswählen" lets several messages be deleted at once.
 struct MessageList: View {
     @Environment(SyncService.self) private var sync
     @Query private var messages: [CachedMessage]
     @Query private var topics: [CachedTopic]
     @State private var hasMore = true
+    @State private var editMode = EditMode.inactive
+    @State private var selection = Set<Int64>()
+    @State private var confirmingDelete = false
 
     private let topic: String?
 
@@ -24,12 +28,14 @@ struct MessageList: View {
 
     var body: some View {
         let names = Dictionary(topics.compactMap(\.topic).map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-        List {
+        // Only edit mode selects; a tap outside of it just opens the message.
+        List(selection: Binding(get: { selection }, set: { if editMode.isEditing { selection = $0 } })) {
             ForEach(messages) { cached in
                 let message = cached.message
                 NavigationLink(value: message.id) {
                     MessageRow(message: message, topic: names[message.topic], showTopic: topic == nil)
                 }
+                .tag(message.id)
                 .swipeActions(edge: .leading) {
                     if message.readAt == nil {
                         Button("Gelesen", systemImage: "checkmark") { Task { await sync.markRead(message.id) } }
@@ -51,6 +57,47 @@ struct MessageList: View {
             }
         }
         .listStyle(.plain)
+        .environment(\.editMode, $editMode)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if editMode.isEditing {
+                    Button("Fertig") { stopSelecting() }
+                } else if !messages.isEmpty {
+                    Button("Auswählen") {
+                        selection = []
+                        editMode = .active
+                    }
+                }
+            }
+            if editMode.isEditing {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    let allSelected = !messages.isEmpty && selection.count == messages.count
+                    Button(allSelected ? "Keine" : "Alle auswählen") {
+                        selection = allSelected ? [] : Set(messages.map(\.id))
+                    }
+                    Spacer()
+                    Button("Löschen (\(selection.count))", systemImage: "trash", role: .destructive) {
+                        confirmingDelete = true
+                    }
+                    .labelStyle(.titleOnly)
+                    .disabled(selection.isEmpty)
+                }
+            }
+        }
+        .toolbar(editMode.isEditing ? .hidden : .automatic, for: .tabBar)
+        .confirmationDialog(Text(deleteQuestion), isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Löschen", role: .destructive) {
+                let ids = Array(selection)
+                stopSelecting()
+                Task { await sync.delete(ids) }
+            }
+        } message: {
+            Text("Die Anhänge werden mit gelöscht.")
+        }
+        // Messages deleted elsewhere drop out of the selection.
+        .onChange(of: messages.map(\.id)) { _, ids in
+            selection.formIntersection(ids)
+        }
         .overlay {
             if messages.isEmpty && !hasMore {
                 ContentUnavailableView("Keine Nachrichten", systemImage: "tray",
@@ -58,6 +105,15 @@ struct MessageList: View {
             }
         }
         .refreshable { await sync.refresh() }
+    }
+
+    private var deleteQuestion: String {
+        selection.count == 1 ? "Eine Nachricht löschen?" : "\(selection.count) Nachrichten löschen?"
+    }
+
+    private func stopSelecting() {
+        editMode = .inactive
+        selection = []
     }
 }
 

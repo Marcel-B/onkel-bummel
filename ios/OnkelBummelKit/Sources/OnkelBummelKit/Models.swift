@@ -152,6 +152,11 @@ public struct MarkReadResult: Codable, Sendable {
     public var count: Int
 }
 
+/// Answer of `POST messages/delete`: how many of the messages were still there.
+public struct DeleteMessagesResult: Codable, Sendable {
+    public var count: Int
+}
+
 /// RFC 7807 problem as the server sends it; `detail` is German and meant for people.
 public struct Problem: Codable, Sendable, Error, LocalizedError {
     public var title: String?
