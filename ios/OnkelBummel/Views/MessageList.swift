@@ -28,8 +28,9 @@ struct MessageList: View {
 
     var body: some View {
         let names = Dictionary(topics.compactMap(\.topic).map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
-        // Only edit mode selects; a tap outside of it just opens the message.
-        List(selection: Binding(get: { selection }, set: { if editMode.isEditing { selection = $0 } })) {
+        // The list gets a selection only in edit mode: with one, iOS turns a tap on a row into selecting it
+        // instead of following its NavigationLink, so outside of edit mode nothing would open.
+        List(selection: editMode.isEditing ? $selection : nil) {
             ForEach(messages) { cached in
                 let message = cached.message
                 NavigationLink(value: message.id) {
